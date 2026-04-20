@@ -1,45 +1,36 @@
 import os
 import re
-import asyncio 
+import asyncio
+import sqlite3
 from datetime import datetime, timezone
 from pyrogram import Client, filters, idle
+from pyrogram.types import InputMediaPhoto, InputMediaVideo
 from flask import Flask
 from threading import Thread
 
 # ==========================================
-# إعدادات المتغيرات البيئية
+# 1. الإعدادات وقاعدة البيانات
 # ==========================================
 API_ID = int(os.environ.get("API_ID", "0"))
 API_HASH = os.environ.get("API_HASH", "")
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
-TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL", "")
 
-START_DATE_STR = os.environ.get("START_DATE", "2024-01-01")
+RETAIL_CHANNEL = "@girlsfashionesta"
+WHOLESALE_CHANNEL = "@Far_sha1"
 
-def parse_date(date_str):
-    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%m-%d-%Y"):
-        try:
-            # نجعل التاريخ "aware" بمنطقة UTC ليتوافق مع تيليجرام
-            return datetime.strptime(date_str, fmt).replace(tzinfo=timezone.utc)
-        except ValueError:
-            continue
-    return datetime(2024, 1, 1, tzinfo=timezone.utc)
-
-START_DATE = parse_date(START_DATE_STR)
+# قاعدة بيانات للربط بين رسائل القناتين (للتعديل والحذف التلقائي)
+db = sqlite3.connect("msg_map.db", check_same_thread=False)
+cursor = db.cursor()
+cursor.execute("CREATE TABLE IF NOT EXISTS mapping (retail_id INTEGER PRIMARY KEY, wholesale_id INTEGER)")
+db.commit()
 
 raw_channels = os.environ.get("SOURCE_CHANNELS", "").split()
-SOURCE_CHANNELS = []
-for ch in raw_channels:
-    if ch.startswith("-"):
-        try: SOURCE_CHANNELS.append(int(ch))
-        except: SOURCE_CHANNELS.append(ch)
-    else:
-        SOURCE_CHANNELS.append(ch)
+SOURCE_CHANNELS = [int(ch) if ch.startswith("-") else ch for ch in raw_channels]
 
 # ==========================================
-# 1. جدول الأسعار
+# 2. جداول الأسعار (حرفياً كما أرسلتها)
 # ==========================================
-PRICE_MAPPING = {
+RETAIL_MAPPING = {
     25: 55, 30: 60, 35: 65, 40: 70, 45: 75, 50: 80, 55: 85, 60: 90, 65: 95, 70: 100,
     75: 105, 80: 115, 85: 120, 90: 130, 95: 135, 100: 140, 105: 150, 110: 155, 115: 165, 120: 170,
     125: 175, 130: 185, 135: 190, 140: 200, 145: 205, 150: 210, 155: 220, 160: 225, 165: 235, 170: 240,
@@ -62,16 +53,38 @@ PRICE_MAPPING = {
     975: 1365, 980: 1375, 985: 1380, 990: 1390, 995: 1395, 1000: 1400,
 }
 
+WHOLESALE_MAPPING = {
+    25: 45, 30: 50, 35: 55, 40: 60, 45: 65, 50: 70, 55: 75, 60: 80, 65: 85, 70: 90,
+    75: 95, 80: 100, 85: 105, 90: 110, 95: 115, 100: 120, 105: 130, 110: 135, 115: 140, 120: 145,
+    125: 150, 130: 160, 135: 165, 140: 170, 145: 175, 150: 180, 155: 190, 160: 195, 165: 200, 170: 205,
+    175: 210, 180: 220, 185: 225, 190: 230, 195: 235, 200: 240, 205: 250, 210: 255, 215: 260, 220: 265,
+    225: 275, 230: 280, 235: 285, 240: 290, 245: 295, 250: 300, 255: 310, 260: 315, 265: 320, 270: 325,
+    275: 330, 280: 340, 285: 345, 290: 350, 295: 355, 300: 360, 305: 370, 310: 375, 315: 380, 320: 385,
+    325: 390, 330: 400, 335: 405, 340: 410, 345: 415, 350: 420, 355: 430, 360: 435, 365: 440, 370: 445,
+    375: 450, 380: 460, 385: 465, 390: 470, 395: 475, 400: 480, 405: 490, 410: 495, 415: 500, 420: 505,
+    425: 510, 430: 520, 435: 535, 440: 530, 445: 535, 450: 540, 455: 550, 460: 555, 465: 560, 470: 565,
+    475: 570, 480: 580, 485: 585, 490: 590, 495: 595, 500: 600, 505: 610, 510: 615, 515: 620, 520: 625,
+    525: 630, 530: 640, 535: 645, 540: 650, 545: 655, 550: 660, 555: 670, 560: 675, 565: 680, 570: 685,
+    575: 690, 580: 700, 585: 705, 590: 710, 595: 715, 600: 720, 605: 730, 610: 735, 615: 740, 620: 745,
+    625: 750, 630: 760, 635: 765, 640: 770, 645: 775, 650: 780, 655: 790, 660: 795, 665: 800, 670: 805,
+    675: 810, 680: 820, 685: 825, 690: 830, 695: 835, 700: 840, 705: 850, 710: 855, 715: 860, 720: 865,
+    725: 870, 730: 880, 735: 885, 740: 890, 745: 895, 750: 900, 755: 910, 760: 915, 765: 920, 770: 925,
+    775: 930, 780: 940, 785: 945, 790: 950, 795: 955, 800: 960, 805: 970, 810: 975, 815: 980, 820: 985,
+    825: 990, 830: 1000, 835: 1005, 840: 1010, 845: 1015, 850: 1020, 855: 1030, 860: 1035, 865: 1040, 870: 1045,
+    875: 1050, 880: 1060, 885: 1065, 890: 1070, 895: 1075, 900: 1080, 905: 1090, 910: 1095, 915: 1100, 920: 1105,
+    925: 1110, 930: 1120, 935: 1125, 940: 1130, 945: 1135, 950: 1140, 955: 1150, 960: 1155, 965: 1160, 970: 1165,
+    975: 1170, 980: 1180, 985: 1185, 990: 1190, 995: 1195, 1000: 1200,
+}
+
 # ==========================================
-# 2. نظام الترقيم والدوال
+# 3. الدوال المساعدة ونظام الترقيم
 # ==========================================
+SUPPLIER_PREFIX_MAP = {"aymanelawamy123": "A", "sasaaccessories": "S", "ayselstore55": "AS", "miyokowatches22": "M", -1001132261086: "P", -1001448553593: "I", -1001682055192: "H"}
+P_CHANNEL_TYPES = {"A": "انسيال", "K": "خلخال", "N": "سلسلة", "CP": "كوليه", "E": "حلق", "R": "خاتم", "B": "اسورة"}
+REVIEW_KEYWORDS = ["ريفيو", "ريفيوهات", "آراء", "اراء", "رأي", "راي", "وصلنا", "تجربة", "تجربه", "تسلم", "شكرا", "شكرًا"]
+
 last_saved_date = None
 daily_post_counter = 0
-
-SUPPLIER_PREFIX_MAP = {
-    "aymanelawamy123": "A", "sasaaccessories": "S", "ayselstore55": "AS",
-    "miyokowatches22": "M", -1001132261086: "P", -1001448553593: "I", -1001682055192: "H",
-}
 
 def generate_my_code(source_channel_id):
     global last_saved_date, daily_post_counter
@@ -87,73 +100,136 @@ def generate_my_code(source_channel_id):
 def normalize_numbers(text):
     return text.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
 
-def build_final_text(original_text, source_channel_id):
-    processed_text = normalize_numbers(original_text or "")
-    text_lower = processed_text.lower()
+def build_text(original_text, source_id, is_wholesale=False):
+    if not original_text: return ""
+    if any(word in original_text for word in REVIEW_KEYWORDS): return None
+    processed_text = normalize_numbers(original_text)
+    prefix = SUPPLIER_PREFIX_MAP.get(source_id, "")
     
-    product_name = "قطعة"
-    keywords = ["طقم", "سلسلة", "اسورة", "اسوره", "خاتم", "خواتم", "حلق", "حلقان", "كوليه", "خلخال", "بيرسينج", "بروش", "انسيال"]
-    for word in keywords:
-        if word in text_lower: product_name = word; break
-    
-    new_price = "حددنا لك"
-    normal_match = re.search(r'(\d+)(\s*جنيه|\s*ج\.?|\s*ج)', processed_text)
-    if normal_match:
-        p = int(normal_match.group(1))
-        new_price = str(PRICE_MAPPING.get(p, p + 30))
+    # القناة P
+    if prefix == "P":
+        p_match = re.search(r'^([A-Z]+)\d+\s+price\s+\d+', processed_text, re.IGNORECASE)
+        if p_match:
+            code_letter = p_match.group(1).upper()
+            product_from_code = P_CHANNEL_TYPES.get(code_letter, "قطعة")
+            processed_text = re.sub(r'^[A-Z]+\d+\s+price\s+\d+', '', processed_text, flags=re.IGNORECASE).strip()
+            if not processed_text:
+                processed_text = f"{product_from_code} قمر قوي💕\nاستانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨"
 
-    my_new_code = generate_my_code(source_channel_id)
-    return f"{product_name} قمر قوي💕\nاستانلس بيور عيار ٣١٦ 💎💯\nالكود : 🔖 {my_new_code}\nبسعر : 💰 {new_price} ج 🔥", my_new_code
+    if prefix == "I": processed_text = re.sub(r'infinity', 'فاشونيستا', processed_text, flags=re.IGNORECASE)
+    if prefix == "AS": processed_text = re.sub(r'ختم\s*AS', '', processed_text, flags=re.IGNORECASE)
+
+    # استخراج السعر الجديد
+    mapping = WHOLESALE_MAPPING if is_wholesale else RETAIL_MAPPING
+    found_numbers = [int(n) for n in re.findall(r'(\d+)', original_text) if 10 <= int(n) <= 2000]
+    found_price_val = None
+    online_match = re.search(r'(?:اونلاين|online)\s*(\d+)', processed_text, re.IGNORECASE)
+    offer_match = re.search(r'عرض\s*(\d+)', processed_text, re.IGNORECASE)
+    
+    if online_match: found_price_val = int(online_match.group(1))
+    elif offer_match: found_price_val = int(offer_match.group(1))
+    elif any(x in processed_text for x in ["بدل", "عرض خاص", "بس"]):
+        if found_numbers: found_price_val = min(found_numbers)
+    else:
+        any_p_match = re.search(r'(\d+)\s*(?:جنيه|ج)', processed_text)
+        if any_p_match: found_price_val = int(any_p_match.group(1))
+        elif found_numbers: found_price_val = found_numbers[0]
+
+    new_price = str(mapping.get(found_price_val, "سعر غير مسجل"))
+    
+    # تنظيف النص
+    patterns = [r'.*(?:اونلاين|online).*', r'.*(?:سعر القطعه|القطعه بـ|price|بسعر|جمله).*', r'.*(?:بدل|عرض خاص|عرض).*', r'^\d+\s*(?:ج|جنيه)?\s*$']
+    clean_lines = [l.strip() for l in processed_text.split('\n') if not any(re.search(p, l, re.IGNORECASE) for p in patterns) and l.strip()]
+    
+    final_clean_text = "\n".join(clean_lines)
+    code = generate_my_code(source_id)
+    return f"{final_clean_text}\n\nالكود : 🔖 {code}\nالسعر ({'جملة' if is_wholesale else 'قطاعي'}) : 💰 {new_price} ج 🔥"
 
 # ==========================================
-# 3. البوت والسحب
+# 4. نظام الميديا والنشر (المزامنة)
 # ==========================================
-web_app = Flask(__name__)
-@web_app.route('/')
-def home(): return "Bot is running!"
+media_groups = {} 
 
+async def process_album(client, media_group_id):
+    await asyncio.sleep(2)
+    if media_group_id not in media_groups: return
+    messages = media_groups.pop(media_group_id)
+    main_msg = next((m for m in messages if m.caption), messages[0])
+    source = main_msg.chat.username or main_msg.chat.id
+    
+    r_text = build_text(main_msg.caption, source, False)
+    if r_text is None: return
+    w_text = build_text(main_msg.caption, source, True)
+    
+    retail_media = [InputMediaPhoto(m.photo.file_id) if m.photo else InputMediaVideo(m.video.file_id) for m in messages]
+    wholesale_media = [InputMediaPhoto(m.photo.file_id) if m.photo else InputMediaVideo(m.video.file_id) for m in messages]
+    
+    try:
+        await client.send_media_group(RETAIL_CHANNEL, retail_media)
+        await client.send_media_group(WHOLESALE_CHANNEL, wholesale_media)
+        r_msg = await client.send_message(RETAIL_CHANNEL, r_text)
+        w_msg = await client.send_message(WHOLESALE_CHANNEL, w_text)
+        cursor.execute("INSERT INTO mapping VALUES (?, ?)", (r_msg.id, w_msg.id))
+        db.commit()
+    except Exception as e: print(f"Error: {e}")
+
+# ==========================================
+# 5. تشغيل البوت ومعالجة الرسائل
+# ==========================================
 app = Client("session", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
 
-async def process_and_send(message):
-    try:
-        orig = message.caption or message.text or ""
-        source = message.chat.username or message.chat.id
-        final_text, code = build_final_text(orig, source)
-        if message.photo:
-            path = await message.download()
-            await app.send_photo(TARGET_CHANNEL, path, caption=final_text)
-            if os.path.exists(path): os.remove(path)
-        elif message.text:
-            await app.send_message(TARGET_CHANNEL, final_text)
-        print(f"✅ تم النقل من {source} | الكود: {code}")
-    except Exception as e: print(f"❌ خطأ نقل: {e}")
-
-async def run_bot():
-    await app.start()
-    print(f"⏳ جاري سحب الشغل القديم من تاريخ {START_DATE}...")
-    for chat_id in SOURCE_CHANNELS:
+@app.on_message(filters.chat(SOURCE_CHANNELS) & ~filters.forwarded)
+async def main_handler(client, message):
+    if message.media_group_id:
+        if message.media_group_id not in media_groups:
+            media_groups[message.media_group_id] = [message]
+            asyncio.create_task(process_album(client, message.media_group_id))
+        else: media_groups[message.media_group_id].append(message)
+    else:
         try:
-            print(f"📂 فحص القناة: {chat_id}")
-            async for message in app.get_chat_history(chat_id, limit=50):
-                # التأكد من مقارنة تاريخين aware
-                msg_date = message.date.replace(tzinfo=timezone.utc) if message.date.tzinfo is None else message.date
-                if msg_date >= START_DATE and not (message.forward_from_chat or message.forward_from):
-                    await process_and_send(message)
-                    await asyncio.sleep(1.5)
-        except Exception as e:
-            print(f"⚠️ خطأ فحص القناة {chat_id}: {e}")
+            source = message.chat.username or message.chat.id
+            r_text = build_text(message.caption or message.text, source, False)
+            if r_text is None: return
+            w_text = build_text(message.caption or message.text, source, True)
             
-    print("✨ انتهى السحب القديم. البوت يراقب الجديد الآن.")
-    
-    @app.on_message(filters.chat(SOURCE_CHANNELS) & ~filters.forwarded)
-    async def live_updates(client, message):
-        print(f"📩 رسالة جديدة من {message.chat.id}")
-        await process_and_send(message)
-    
-    await idle()
+            if message.photo:
+                await client.send_photo(RETAIL_CHANNEL, message.photo.file_id)
+                await client.send_photo(WHOLESALE_CHANNEL, message.photo.file_id)
+            elif message.video:
+                await client.send_video(RETAIL_CHANNEL, message.video.file_id)
+                await client.send_video(WHOLESALE_CHANNEL, message.video.file_id)
+            elif message.animation:
+                await client.send_animation(RETAIL_CHANNEL, message.animation.file_id)
+                await client.send_animation(WHOLESALE_CHANNEL, message.animation.file_id)
+            
+            r_msg = await client.send_message(RETAIL_CHANNEL, r_text)
+            w_msg = await client.send_message(WHOLESALE_CHANNEL, w_text)
+            cursor.execute("INSERT INTO mapping VALUES (?, ?)", (r_msg.id, w_msg.id))
+            db.commit()
+        except: pass
+
+@app.on_edited_message(filters.chat(RETAIL_CHANNEL))
+async def edit_handler(client, message):
+    cursor.execute("SELECT wholesale_id FROM mapping WHERE retail_id = ?", (message.id,))
+    res = cursor.fetchone()
+    if res:
+        new_w_text = message.text.replace("قطاعي", "جملة").replace("(قطاعي)", "(جملة)")
+        await client.edit_message_text(WHOLESALE_CHANNEL, res[0], new_w_text)
+
+@app.on_deleted_messages(filters.chat(RETAIL_CHANNEL))
+async def delete_handler(client, messages):
+    for msg in messages:
+        cursor.execute("SELECT wholesale_id FROM mapping WHERE retail_id = ?", (msg.id,))
+        res = cursor.fetchone()
+        if res:
+            await client.delete_messages(WHOLESALE_CHANNEL, res[0])
+            cursor.execute("DELETE FROM mapping WHERE retail_id = ?", (msg.id,))
+    db.commit()
+
+web_app = Flask(__name__)
+@web_app.route('/')
+def home(): return "Final Pro Bot is Live!"
 
 if __name__ == "__main__":
     Thread(target=lambda: web_app.run(host="0.0.0.0", port=8000)).start()
-    # تشغيل البوت باستخدام Event Loop الحالية
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(run_bot())
+    app.run()
