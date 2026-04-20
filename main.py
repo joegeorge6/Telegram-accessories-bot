@@ -14,14 +14,23 @@ API_HASH = os.environ.get("API_HASH", "")
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
 TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL", "")
 
-# إعداد تاريخ البدء (تنسيق: YYYY-MM-DD)
+# جلب التاريخ من Koyeb وطباعته للتأكد
 START_DATE_STR = os.environ.get("START_DATE", "2024-01-01")
-try:
-    START_DATE = datetime.strptime(START_DATE_STR, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-except:
-    START_DATE = datetime(2024, 1, 1, tzinfo=timezone.utc)
+print(f"🔍 القيمة المستلمة من Koyeb للتاريخ هي: {START_DATE_STR}")
 
-# تحويل القنوات بطريقة آمنة
+def parse_date(date_str):
+    # محاولة قراءة التاريخ بأكثر من تنسيق لضمان العمل
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%m-%d-%Y"):
+        try:
+            return datetime.strptime(date_str, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    # إذا فشل كل شيء، نعود لتاريخ قديم جداً
+    return datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+START_DATE = parse_date(START_DATE_STR)
+
+# تحويل القنوات
 raw_channels = os.environ.get("SOURCE_CHANNELS", "").split()
 SOURCE_CHANNELS = []
 for ch in raw_channels:
@@ -57,7 +66,7 @@ PRICE_MAPPING = {
 }
 
 # ==========================================
-# 2. نظام الترقيم
+# 2. نظام الكود
 # ==========================================
 last_saved_date = None
 daily_post_counter = 0
@@ -78,13 +87,11 @@ def generate_my_code(source_channel_id):
     today_day = now.strftime("%d")
     today_month = now.strftime("%m")
     today_str = f"{today_day}{today_month}"
-    
     if last_saved_date != today_str:
         last_saved_date = today_str
         daily_post_counter = 1  
     else:
         daily_post_counter += 1 
-        
     prefix = SUPPLIER_PREFIX_MAP.get(source_channel_id, "UN")
     return f"{prefix}{daily_post_counter:02d}{today_day}{today_month}"
 
@@ -96,6 +103,26 @@ def normalize_numbers(text):
     english_numbers = "0123456789"
     translation_table = str.maketrans(arabic_numbers, english_numbers)
     return text.translate(translation_table)
+
+def build_final_text(original_text, source_channel_id):
+    from __main__ import extract_product_type, get_ring_size_info, extract_and_modify_price
+    if not original_text: original_text = ""
+    processed_text = normalize_numbers(original_text)
+    text_lower = processed_text.lower()
+    
+    product_name = extract_product_type(processed_text, source_channel_id)
+    size_info = get_ring_size_info(processed_text) if product_name in ["خاتم", "خواتم"] else ""
+    product_size = f"{product_name} {size_info}" if size_info else product_name
+    my_new_code = generate_my_code(source_channel_id)
+    new_price = extract_and_modify_price(processed_text, source_channel_id)
+
+    if "بيرسينج بول باك" in text_lower:
+        final_text = f"بيرسينج بول باك شيك قوي💕💕\nعمود استانلس بيور عيار ٣١٦ 💎💯\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
+    elif "استانلس" in text_lower or "استالنس" in text_lower:
+        final_text = f"{product_size} قمر قوي💕\nاستانلس بيور عيار ٣١٦ 💎💯\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
+    else:
+        final_text = f"{product_size} مميز جداً ✨\nلو عايز تتميز دوس على الطلب 💎\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
+    return final_text, my_new_code
 
 def extract_product_type(text, source_name):
     if not text: return "قطعة"
@@ -132,32 +159,10 @@ def extract_and_modify_price(text, source_name):
         return str(new_price) if new_price else str(found_price + 30)
     return "حددنا لك"
 
-def build_final_text(original_text, source_channel_id):
-    if not original_text: original_text = ""
-    processed_text = normalize_numbers(original_text)
-    text_lower = processed_text.lower()
-    product_name = extract_product_type(processed_text, source_channel_id)
-    size_info = get_ring_size_info(processed_text) if product_name in ["خاتم", "خواتم"] else ""
-    product_size = f"{product_name} {size_info}" if size_info else product_name
-    my_new_code = generate_my_code(source_channel_id)
-    new_price = extract_and_modify_price(processed_text, source_channel_id)
-
-    if "بيرسينج بول باك" in text_lower:
-        final_text = f"بيرسينج بول باك شيك قوي💕💕\nعمود استانلس بيور عيار ٣١٦ 💎💯\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
-    elif "استانلس" in text_lower or "استالنس" in text_lower:
-        final_text = f"{product_size} قمر قوي💕\nاستانلس بيور عيار ٣١٦ 💎💯\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
-    else:
-        final_text = f"{product_size} مميز جداً ✨\nلو عايز تتميز دوس على الطلب 💎\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
-    return final_text, my_new_code
-
 # ==========================================
-# 4. سيرفر الويب الوهمي
+# 4. سيرفر الويب
 # ==========================================
 web_app = Flask(__name__)
-import logging
-log = logging.getLogger('werkzeug')
-log.setLevel(logging.ERROR) # تقليل رسائل السيرفر
-
 @web_app.route('/')
 def home(): return "Bot is running!"
 
@@ -167,7 +172,6 @@ def run_web():
 # ==========================================
 # 5. تشغيل البوت
 # ==========================================
-# ملاحظة: تم تغيير المسار ليكون في الذاكرة تماماً لتجنب قفل القاعدة
 app = Client(
     "auto_poster_session",
     api_id=API_ID,
@@ -178,7 +182,9 @@ app = Client(
 
 async def forward_post(client, message):
     try:
+        # فحص التاريخ
         if message.date < START_DATE:
+            print(f"⚠️ تجاهل رسالة قديمة من {message.chat.id} بتاريخ {message.date}")
             return
 
         orig = message.caption or message.text or ""
