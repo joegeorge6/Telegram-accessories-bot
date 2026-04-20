@@ -3,6 +3,8 @@ import re
 import asyncio 
 from datetime import datetime
 from pyrogram import Client, filters
+from flask import Flask
+from threading import Thread
 
 # ==========================================
 # إعدادات من المتغيرات البيئية (Render / Koyeb)
@@ -23,7 +25,7 @@ for ch in raw_channels:
 TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL", "")
 
 # ==========================================
-# 1. جدول الأسعار الجديد (تم تحديثه من ملف Excel)
+# 1. جدول الأسعار (محدث من ملف Excel)
 # ==========================================
 PRICE_MAPPING = {
     25: 55, 30: 60, 35: 65, 40: 70, 45: 75, 50: 80, 55: 85, 60: 90, 65: 95, 70: 100,
@@ -49,7 +51,7 @@ PRICE_MAPPING = {
 }
 
 # ==========================================
-# 2. نظام الكود الخاص بك
+# 2. نظام الكود ونظام الترقيم
 # ==========================================
 last_saved_date = None
 daily_post_counter = 0
@@ -81,7 +83,7 @@ def generate_my_code(source_channel_id):
     return f"{prefix}{daily_post_counter:02d}{today_day}{today_month}"
 
 # ==========================================
-# 3. دوال استخراج البيانات
+# 3. دوال المعالجة والتحليل
 # ==========================================
 
 def normalize_numbers(text):
@@ -93,101 +95,70 @@ def normalize_numbers(text):
 def extract_product_type(text, source_name):
     if not text: return "قطعة"
     text_lower = text.lower()
-    
     if source_name == -1001132261086:
         p_match = re.search(r'\b(A|K|N|CP|E|R|B)\b', text, re.IGNORECASE)
         if p_match:
-            code = p_match.group(1).upper()
-            p_map = {
-                "A": "انسيال", "K": "خلخال", "N": "سلسلة", "CP": "كوليه",
-                "E": "حلق", "R": "خاتم", "B": "اسورة"
-            }
-            return p_map.get(code, "قطعة")
-
+            p_map = {"A": "انسيال", "K": "خلخال", "N": "سلسلة", "CP": "كوليه", "E": "حلق", "R": "خاتم", "B": "اسورة"}
+            return p_map.get(p_match.group(1).upper(), "قطعة")
     keywords = ["طقم", "سلسلة", "اسورة", "اسوره", "خاتم", "خواتم", "حلق", "حلقان", "كوليه", "خلخال", "بيرسينج", "بروش", "انسيال"]
     for word in keywords:
-        if word in text_lower:
-            return word
+        if word in text_lower: return word
     return "قطعة"
 
 def get_ring_size_info(text):
     size_match = re.search(r'(مقاس(?:ات)?(?:\s+من)?\s+\d+\s*ل(?:ـ)?\s*\d+)', text)
-    if size_match:
-        return size_match.group(1) 
-    if "فري" in text or "سايز" in text or "مقاس واحد" in text or "عالمي" in text:
-        return "فري سايز"
+    if size_match: return size_match.group(1) 
+    if any(x in text for x in ["فري", "سايز", "مقاس واحد"]): return "فري سايز"
     return ""
 
 def extract_and_modify_price(text, source_name):
     if not text: return "حددنا لك"
     clean_text = normalize_numbers(text)
-    
     online_price_channels = ["sasaaccessories", -1001682055192, "miyokowatches22"]
     found_price = None
-    
     if source_name in online_price_channels:
-        online_match = re.search(r'(?:اونلاين|اون لاين|الاون لاين)[^\d]*(\d+)', clean_text)
-        if online_match:
-            found_price = int(online_match.group(1))
-            
+        online_match = re.search(r'(?:اونلاين|الاون لاين)[^\d]*(\d+)', clean_text)
+        if online_match: found_price = int(online_match.group(1))
     if found_price is None:
         normal_match = re.search(r'(\d+)(\s*جنيه|\s*ج\.?|\s*ج)', clean_text)
-        if normal_match:
-            found_price = int(normal_match.group(1))
-
+        if normal_match: found_price = int(normal_match.group(1))
     if found_price:
         new_price = PRICE_MAPPING.get(found_price)
         return str(new_price) if new_price else str(found_price + 30)
-        
     return "حددنا لك"
 
-# ==========================================
-# 4. دالة بناء النص النهائي
-# ==========================================
-
 def build_final_text(original_text, source_channel_id):
-    if not original_text:
-        original_text = ""
-        
+    if not original_text: original_text = ""
     processed_text = normalize_numbers(original_text)
     text_lower = processed_text.lower()
-
     product_name = extract_product_type(processed_text, source_channel_id)
-    size_info = ""
-    if product_name in ["خاتم", "خواتم"]:
-        size_info = get_ring_size_info(processed_text)
-    
+    size_info = get_ring_size_info(processed_text) if product_name in ["خاتم", "خواتم"] else ""
     product_size = f"{product_name} {size_info}" if size_info else product_name
     my_new_code = generate_my_code(source_channel_id)
     new_price = extract_and_modify_price(processed_text, source_channel_id)
 
-    # القوالب (Templates)
-    if "بيرسينج بول باك مع تكه كونكت فصوص زيركون" in text_lower:
-        final_text = f"بيرسينج بول باك مع تكه كونكت فصوص زيركون قمر قوي💕\nعمود استانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨\nالكود : 🔖  {my_new_code}\nالبيرسينج فردة واحدة بسعر : 💰   {new_price}   ج  🔥"
-    elif "بيرسينج بول باك" in text_lower:
-        final_text = f"بيرسينج بول باك شيك قوي💕💕\nعمود استانلس بيور عيار ٣١٦ فصوص زيركون💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨️\nالكود : 🔖  {my_new_code}\nالبيرسينج فردة واحدة بسعر : 💰   {new_price}   ج  🔥"
-    elif "بيرسينج تكه" in text_lower or "قطرة ٨ مم" in text_lower:
-        final_text = f"كوليكشن بيرسينج تكه قطرة ٨ مم ينفع اطفالي شيك قوي💕💕\nعمود استانلس بيور عيار ٣١٦ فصوص زيركون💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨️\nالكود : 🔖  {my_new_code}\nالفردة بسعر : 💰   {new_price}   ج  🔥"
-    elif any(x in text_lower for x in ["الدلاية جولد بليتد", "الدلاية دهب صيني", "الدلاية بلاتين"]):
-        dalaia_type = "الدلاية جولد بليتد"
-        if "دهب صيني" in text_lower: dalaia_type = "الدلاية دهب صيني"
-        elif "بلاتين" in text_lower: dalaia_type = "الدلاية بلاتين"
-        final_text = f"سلسلة تريندي قمر قوي 💕💕\nاستانلس بيور عيار ٣١٦ 💎💯\n⚠️ {dalaia_type}\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
-    elif "دهب صيني فصوص زيركون" in text_lower:
-        final_text = f"{product_size} شيك قوي 💛✨\nدهب صيني فصوص زيركون ✨\nلمعة حلوة وشكل شيك يلفت النظر 💛\nبيدي إحساس الدهب من غير تكلفة 💸\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
-    elif "بانجل" in text_lower:
-        final_text = f"كوليكشن بانجلز تريندي بالوانها 🌈💖\nألوان حلوة وشياكة بسيطة تكمل أي لوك 👌\nخفيف ومريح على الإيد، يدي لمسة مميزة كل يوم ✨\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
+    if "بيرسينج بول باك" in text_lower:
+        final_text = f"بيرسينج بول باك شيك قوي💕💕\nعمود استانلس بيور عيار ٣١٦ 💎💯\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
     elif "استانلس" in text_lower or "استالنس" in text_lower:
-        final_text = f"{product_size} قمر قوي💕\nاستانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
+        final_text = f"{product_size} قمر قوي💕\nاستانلس بيور عيار ٣١٦ 💎💯\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
     else:
         final_text = f"{product_size} مميز جداً ✨\nلو عايز تتميز دوس على الطلب 💎\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
-
     return final_text, my_new_code
 
 # ==========================================
-# 5. تشغيل البوت
+# 4. سيرفر الويب الوهمي لـ Koyeb
 # ==========================================
+web_app = Flask(__name__)
+@web_app.route('/')
+def home(): return "Bot is running!"
 
+def run_web():
+    # كويب يتطلب بورت 8000 افتراضياً للـ Web Service
+    web_app.run(host="0.0.0.0", port=8000)
+
+# ==========================================
+# 5. تشغيل البوت الأساسي
+# ==========================================
 app = Client(
     "auto_poster",
     api_id=API_ID,
@@ -199,9 +170,8 @@ app = Client(
 async def forward_post(client, message):
     try:
         orig = message.caption or message.text or ""
-        source_name = message.chat.username if message.chat.username else message.chat.id
-        final_text, generated_code = build_final_text(orig, source_name)
-        
+        source_name = message.chat.username or message.chat.id
+        final_text, code = build_final_text(orig, source_name)
         if message.photo:
             path = await message.download()
             await client.send_photo(TARGET_CHANNEL, path, caption=final_text)
@@ -212,15 +182,14 @@ async def forward_post(client, message):
             if os.path.exists(path): os.remove(path)
         elif message.text:
             await client.send_message(TARGET_CHANNEL, final_text)
-            
-        print(f"✅ تم النقل | الكود: {generated_code}")
-    except Exception as e:
-        print(f"❌ خطأ: {e}")
+    except Exception as e: print(f"❌ Error: {e}")
 
 @app.on_message(filters.chat(SOURCE_CHANNELS) & ~filters.forwarded)
 async def new_post(client, message):
-    await asyncio.sleep(2) 
+    await asyncio.sleep(2)
     await forward_post(client, message)
 
-print("🚀 البوت يعمل الآن بالأسعار الجديدة...")
-app.run()
+if __name__ == "__main__":
+    Thread(target=run_web).start()
+    print("🚀 البوت يعمل الآن بالأسعار الجديدة...")
+    app.run()
