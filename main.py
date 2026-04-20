@@ -1,17 +1,25 @@
 import os
 import re
 import asyncio 
-from datetime import datetime
+from datetime import datetime, timezone
 from pyrogram import Client, filters
 from flask import Flask
 from threading import Thread
 
 # ==========================================
-# إعدادات من المتغيرات البيئية (Render / Koyeb)
+# إعدادات المتغيرات البيئية
 # ==========================================
 API_ID = int(os.environ.get("API_ID", "0"))
 API_HASH = os.environ.get("API_HASH", "")
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
+TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL", "")
+
+# إعداد تاريخ البدء (تنسيق: YYYY-MM-DD)
+START_DATE_STR = os.environ.get("START_DATE", "2024-01-01")
+try:
+    START_DATE = datetime.strptime(START_DATE_STR, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+except:
+    START_DATE = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
 # تحويل القنوات بطريقة آمنة
 raw_channels = os.environ.get("SOURCE_CHANNELS", "").split()
@@ -22,10 +30,8 @@ for ch in raw_channels:
     except ValueError:
         SOURCE_CHANNELS.append(ch)
 
-TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL", "")
-
 # ==========================================
-# 1. جدول الأسعار (محدث من ملف Excel)
+# 1. جدول الأسعار (محدث)
 # ==========================================
 PRICE_MAPPING = {
     25: 55, 30: 60, 35: 65, 40: 70, 45: 75, 50: 80, 55: 85, 60: 90, 65: 95, 70: 100,
@@ -51,7 +57,7 @@ PRICE_MAPPING = {
 }
 
 # ==========================================
-# 2. نظام الكود ونظام الترقيم
+# 2. نظام الكود
 # ==========================================
 last_saved_date = None
 daily_post_counter = 0
@@ -153,7 +159,6 @@ web_app = Flask(__name__)
 def home(): return "Bot is running!"
 
 def run_web():
-    # كويب يتطلب بورت 8000 افتراضياً للـ Web Service
     web_app.run(host="0.0.0.0", port=8000)
 
 # ==========================================
@@ -169,9 +174,15 @@ app = Client(
 
 async def forward_post(client, message):
     try:
+        # فحص التاريخ
+        if message.date < START_DATE:
+            print(f"⚠️ تجاهل رسالة قديمة من {message.chat.id} بتاريخ {message.date}")
+            return
+
         orig = message.caption or message.text or ""
         source_name = message.chat.username or message.chat.id
         final_text, code = build_final_text(orig, source_name)
+        
         if message.photo:
             path = await message.download()
             await client.send_photo(TARGET_CHANNEL, path, caption=final_text)
@@ -182,14 +193,26 @@ async def forward_post(client, message):
             if os.path.exists(path): os.remove(path)
         elif message.text:
             await client.send_message(TARGET_CHANNEL, final_text)
-    except Exception as e: print(f"❌ Error: {e}")
+        
+        print(f"✅ تم النقل بنجاح | الكود: {code}")
+            
+    except Exception as e: 
+        print(f"❌ خطأ أثناء النقل: {e}")
 
-@app.on_message(filters.chat(SOURCE_CHANNELS) & ~filters.forwarded)
+@app.on_message(filters.chat(SOURCE_CHANNELS))
 async def new_post(client, message):
+    source = message.chat.username or message.chat.id
+    print(f"📩 وصلت رسالة جديدة من القناة: {source}")
+    
+    if message.forward_from_chat or message.forward_from:
+         print(f"⏩ تم تجاهل الرسالة لأنها محولة (Forwarded)")
+         return
+         
     await asyncio.sleep(2)
     await forward_post(client, message)
 
 if __name__ == "__main__":
     Thread(target=run_web).start()
-    print("🚀 البوت يعمل الآن بالأسعار الجديدة...")
+    print(f"🚀 البوت يعمل الآن ويراقب القنوات: {SOURCE_CHANNELS}")
+    print(f"📅 تاريخ البدء المعتمد: {START_DATE}")
     app.run()
