@@ -2,7 +2,7 @@ import os
 import re
 import asyncio 
 from datetime import datetime, timezone
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle
 from flask import Flask
 from threading import Thread
 
@@ -14,7 +14,6 @@ API_HASH = os.environ.get("API_HASH", "")
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
 TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL", "")
 
-# جلب تاريخ البدء
 START_DATE_STR = os.environ.get("START_DATE", "2024-01-01")
 def parse_date(date_str):
     for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%m-%d-%Y"):
@@ -26,18 +25,16 @@ def parse_date(date_str):
 
 START_DATE = parse_date(START_DATE_STR)
 
-# معالجة قنوات المصدر
 raw_channels = os.environ.get("SOURCE_CHANNELS", "").split()
 SOURCE_CHANNELS = []
 for ch in raw_channels:
     if ch.startswith("-"):
         try: SOURCE_CHANNELS.append(int(ch))
         except: SOURCE_CHANNELS.append(ch)
-    else:
-        SOURCE_CHANNELS.append(ch)
+    else: SOURCE_CHANNELS.append(ch)
 
 # ==========================================
-# 1. جدول الأسعار
+# 1. جدول الأسعار (كامل)
 # ==========================================
 PRICE_MAPPING = {
     25: 55, 30: 60, 35: 65, 40: 70, 45: 75, 50: 80, 55: 85, 60: 90, 65: 95, 70: 100,
@@ -63,164 +60,92 @@ PRICE_MAPPING = {
 }
 
 # ==========================================
-# 2. نظام الترقيم
+# 2. نظام الترقيم والدوال
 # ==========================================
 last_saved_date = None
 daily_post_counter = 0
 
 SUPPLIER_PREFIX_MAP = {
-    "aymanelawamy123": "A",
-    "sasaaccessories": "S",
-    "ayselstore55": "AS",
-    "miyokowatches22": "M",
-    -1001132261086: "P",  
-    -1001448553593: "I",  
-    -1001682055192: "H",  
+    "aymanelawamy123": "A", "sasaaccessories": "S", "ayselstore55": "AS",
+    "miyokowatches22": "M", -1001132261086: "P", -1001448553593: "I", -1001682055192: "H",
 }
 
 def generate_my_code(source_channel_id):
     global last_saved_date, daily_post_counter
     now = datetime.now()
-    today_day = now.strftime("%d")
-    today_month = now.strftime("%m")
-    today_str = f"{today_day}{today_month}"
+    today_str = now.strftime("%d%m")
     if last_saved_date != today_str:
         last_saved_date = today_str
-        daily_post_counter = 1  
-    else:
-        daily_post_counter += 1 
+        daily_post_counter = 1
+    else: daily_post_counter += 1
     prefix = SUPPLIER_PREFIX_MAP.get(source_channel_id, "UN")
-    return f"{prefix}{daily_post_counter:02d}{today_day}{today_month}"
+    return f"{prefix}{daily_post_counter:02d}{today_str}"
 
-# ==========================================
-# 3. المعالجة
-# ==========================================
 def normalize_numbers(text):
-    arabic_numbers = "٠١٢٣٤٥٦٧٨٩"
-    english_numbers = "0123456789"
-    translation_table = str.maketrans(arabic_numbers, english_numbers)
-    return text.translate(translation_table)
-
-def extract_product_type(text, source_name):
-    if not text: return "قطعة"
-    text_lower = text.lower()
-    if source_name == -1001132261086:
-        p_match = re.search(r'\b(A|K|N|CP|E|R|B)\b', text, re.IGNORECASE)
-        if p_match:
-            p_map = {"A": "انسيال", "K": "خلخال", "N": "سلسلة", "CP": "كوليه", "E": "حلق", "R": "خاتم", "B": "اسورة"}
-            return p_map.get(p_match.group(1).upper(), "قطعة")
-    keywords = ["طقم", "سلسلة", "اسورة", "اسوره", "خاتم", "خواتم", "حلق", "حلقان", "كوليه", "خلخال", "بيرسينج", "بروش", "انسيال"]
-    for word in keywords:
-        if word in text_lower: return word
-    return "قطعة"
-
-def get_ring_size_info(text):
-    size_match = re.search(r'(مقاس(?:ات)?(?:\s+من)?\s+\d+\s*ل(?:ـ)?\s*\d+)', text)
-    if size_match: return size_match.group(1) 
-    if any(x in text for x in ["فري", "سايز", "مقاس واحد"]): return "فري سايز"
-    return ""
-
-def extract_and_modify_price(text, source_name):
-    if not text: return "حددنا لك"
-    clean_text = normalize_numbers(text)
-    online_price_channels = ["sasaaccessories", -1001682055192, "miyokowatches22"]
-    found_price = None
-    if source_name in online_price_channels:
-        online_match = re.search(r'(?:اونلاين|الاون لاين)[^\d]*(\d+)', clean_text)
-        if online_match: found_price = int(online_match.group(1))
-    if found_price is None:
-        normal_match = re.search(r'(\d+)(\s*جنيه|\s*ج\.?|\s*ج)', clean_text)
-        if normal_match: found_price = int(normal_match.group(1))
-    if found_price:
-        new_price = PRICE_MAPPING.get(found_price)
-        return str(new_price) if new_price else str(found_price + 30)
-    return "حددنا لك"
+    return text.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
 
 def build_final_text(original_text, source_channel_id):
-    if not original_text: original_text = ""
-    processed_text = normalize_numbers(original_text)
+    processed_text = normalize_numbers(original_text or "")
     text_lower = processed_text.lower()
-    product_name = extract_product_type(processed_text, source_channel_id)
-    size_info = get_ring_size_info(processed_text) if product_name in ["خاتم", "خواتم"] else ""
-    product_size = f"{product_name} {size_info}" if size_info else product_name
-    my_new_code = generate_my_code(source_channel_id)
-    new_price = extract_and_modify_price(processed_text, source_channel_id)
+    
+    # استخراج النوع
+    product_name = "قطعة"
+    keywords = ["طقم", "سلسلة", "اسورة", "اسوره", "خاتم", "خواتم", "حلق", "حلقان", "كوليه", "خلخال", "بيرسينج", "بروش", "انسيال"]
+    for word in keywords:
+        if word in text_lower: product_name = word; break
+    
+    # السعر
+    new_price = "حددنا لك"
+    normal_match = re.search(r'(\d+)(\s*جنيه|\s*ج\.?|\s*ج)', processed_text)
+    if normal_match:
+        p = int(normal_match.group(1))
+        new_price = str(PRICE_MAPPING.get(p, p + 30))
 
-    if "بيرسينج بول باك" in text_lower:
-        final_text = f"بيرسينج بول باك شيك قوي💕💕\nعمود استانلس بيور عيار ٣١٦ 💎💯\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
-    elif "استانلس" in text_lower or "استالنس" in text_lower:
-        final_text = f"{product_size} قمر قوي💕\nاستانلس بيور عيار ٣١٦ 💎💯\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
-    else:
-        final_text = f"{product_size} مميز جداً ✨\nلو عايز تتميز دوس على الطلب 💎\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
-    return final_text, my_new_code
+    my_new_code = generate_my_code(source_channel_id)
+    
+    return f"{product_name} قمر قوي💕\nاستانلس بيور عيار ٣١٦ 💎💯\nالكود : 🔖 {my_new_code}\nبسعر : 💰 {new_price} ج 🔥", my_new_code
 
 # ==========================================
-# 4. السيرفر والبوت
+# 3. البوت والسحب
 # ==========================================
 web_app = Flask(__name__)
 @web_app.route('/')
 def home(): return "Bot is running!"
 
-app = Client(
-    "auto_poster_session",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    session_string=SESSION_STRING,
-    in_memory=True
-)
+app = Client("session", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
 
-async def process_and_send(client, message):
+async def process_and_send(message):
     try:
         orig = message.caption or message.text or ""
-        source_name = message.chat.username or message.chat.id
-        final_text, code = build_final_text(orig, source_name)
-        
+        source = message.chat.username or message.chat.id
+        final_text, code = build_final_text(orig, source)
         if message.photo:
             path = await message.download()
-            await client.send_photo(TARGET_CHANNEL, path, caption=final_text)
-            if os.path.exists(path): os.remove(path)
-        elif message.video:
-            path = await message.download()
-            await client.send_video(TARGET_CHANNEL, path, caption=final_text)
+            await app.send_photo(TARGET_CHANNEL, path, caption=final_text)
             if os.path.exists(path): os.remove(path)
         elif message.text:
-            await client.send_message(TARGET_CHANNEL, final_text)
-        print(f"✅ تم النقل بنجاح من {source_name} | الكود: {code}")
-    except Exception as e: print(f"❌ خطأ نقل من {message.chat.id}: {e}")
+            await app.send_message(TARGET_CHANNEL, final_text)
+        print(f"✅ تم النقل من {source} | الكود: {code}")
+    except Exception as e: print(f"❌ خطأ نقل: {e}")
 
-# جلب الشغل القديم (History)
-async def fetch_history(client):
-    print(f"⏳ جاري البحث عن المنشورات القديمة بدءاً من {START_DATE}...")
+async def run_bot():
+    await app.start()
+    print(f"⏳ جاري سحب الشغل القديم من تاريخ {START_DATE}...")
     for chat_id in SOURCE_CHANNELS:
-        try:
-            print(f"📂 فحص القناة: {chat_id}")
-            async for message in client.get_chat_history(chat_id, limit=50):
-                if message.date >= START_DATE:
-                    if not (message.forward_from_chat or message.forward_from):
-                        await process_and_send(client, message)
-                        await asyncio.sleep(1.5)
-        except Exception as e:
-            print(f"⚠️ تعذر فحص القناة {chat_id}: {e}")
-    print("✨ انتهى سحب القديم. البوت يراقب الجديد الآن.")
-
-@app.on_message(filters.chat(SOURCE_CHANNELS))
-async def live_handler(client, message):
-    source = message.chat.username or message.chat.id
-    print(f"📩 وصلت رسالة جديدة لحظية من: {source}")
+        print(f"📂 فحص القناة: {chat_id}")
+        async for message in app.get_chat_history(chat_id, limit=30):
+            if message.date >= START_DATE and not (message.forward_from_chat or message.forward_from):
+                await process_and_send(message)
+                await asyncio.sleep(1)
+    print("✨ انتهى السحب القديم. البوت الآن يراقب الجديد.")
     
-    if message.forward_from_chat or message.forward_from:
-         print("⏩ تجاهل لأنها محولة")
-         return
-         
-    await asyncio.sleep(2)
-    await process_and_send(client, message)
+    @app.on_message(filters.chat(SOURCE_CHANNELS) & ~filters.forwarded)
+    async def live_updates(client, message):
+        print(f"📩 رسالة جديدة من {message.chat.id}")
+        await process_and_send(message)
+    
+    await idle()
 
 if __name__ == "__main__":
     Thread(target=lambda: web_app.run(host="0.0.0.0", port=8000)).start()
-    
-    @app.on_connect()
-    async def on_connect(client):
-        asyncio.create_task(fetch_history(client))
-
-    print(f"🚀 البوت يراقب القنوات: {SOURCE_CHANNELS}")
-    app.run()
+    asyncio.get_event_loop().run_until_complete(run_bot())
