@@ -11,31 +11,41 @@ API_ID = int(os.environ.get("API_ID", "0"))
 API_HASH = os.environ.get("API_HASH", "")
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
 
-# ✅ تم التصحيح: تحويل القنوات بطريقة آمنة (تقبل الأرقام والكلام)
+# تحويل القنوات بطريقة آمنة
 raw_channels = os.environ.get("SOURCE_CHANNELS", "").split()
 SOURCE_CHANNELS = []
 for ch in raw_channels:
     try:
-        SOURCE_CHANNELS.append(int(ch)) # لو رقم خليه رقم
+        SOURCE_CHANNELS.append(int(ch))
     except ValueError:
-        SOURCE_CHANNELS.append(ch)      # لو كلام (يوزرنيم) خليه كلام
+        SOURCE_CHANNELS.append(ch)
 
 TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL", "")
 
 # ==========================================
-# 1. جدول الأسعار
+# 1. جدول الأسعار الجديد (تم تحديثه من ملف Excel)
 # ==========================================
 PRICE_MAPPING = {
     25: 55, 30: 60, 35: 65, 40: 70, 45: 75, 50: 80, 55: 85, 60: 90, 65: 95, 70: 100,
-    75: 105, 80: 115, 85: 120, 90: 130, 95: 135, 100: 140, 105: 150, 110: 155, 115: 165,
-    120: 170, 125: 175, 130: 185, 135: 190, 140: 200, 145: 205, 150: 210, 155: 220,
-    160: 225, 165: 235, 170: 240, 175: 245, 180: 255, 185: 260, 190: 270, 195: 275,
-    200: 280, 205: 290, 210: 295, 215: 305, 220: 310, 225: 315, 230: 325, 235: 330,
-    240: 340, 245: 345, 250: 350, 255: 360, 260: 365, 265: 375, 270: 380, 275: 385,
-    280: 395, 285: 400, 290: 410, 295: 415, 300: 420, 305: 430, 310: 435, 315: 445,
-    320: 450, 325: 455, 330: 465, 335: 470, 340: 480, 345: 485, 350: 490, 355: 500,
-    360: 505, 365: 515, 370: 520, 375: 525, 380: 535, 385: 540, 390: 550, 395: 555,
-    400: 560
+    75: 105, 80: 115, 85: 120, 90: 130, 95: 135, 100: 140, 105: 150, 110: 155, 115: 165, 120: 170,
+    125: 175, 130: 185, 135: 190, 140: 200, 145: 205, 150: 210, 155: 220, 160: 225, 165: 235, 170: 240,
+    175: 245, 180: 255, 185: 260, 190: 270, 195: 275, 200: 280, 205: 290, 210: 295, 215: 305, 220: 310,
+    225: 315, 230: 325, 235: 330, 240: 340, 245: 345, 250: 350, 255: 360, 260: 365, 265: 375, 270: 380,
+    275: 385, 280: 395, 285: 400, 290: 410, 295: 415, 300: 420, 305: 430, 310: 435, 315: 445, 320: 450,
+    325: 455, 330: 465, 335: 470, 340: 480, 345: 485, 350: 490, 355: 500, 360: 505, 365: 515, 370: 520,
+    375: 525, 380: 535, 385: 540, 390: 550, 395: 555, 400: 560, 405: 570, 410: 575, 415: 585, 420: 590,
+    425: 595, 430: 605, 435: 610, 440: 620, 445: 625, 450: 630, 455: 640, 460: 645, 465: 655, 470: 660,
+    475: 665, 480: 675, 485: 680, 490: 690, 495: 695, 500: 700, 505: 710, 510: 715, 515: 725, 520: 730,
+    525: 735, 530: 745, 535: 750, 540: 760, 545: 765, 550: 770, 555: 780, 560: 785, 565: 795, 570: 800,
+    575: 805, 580: 815, 585: 820, 590: 830, 595: 835, 600: 840, 605: 850, 610: 855, 615: 865, 620: 870,
+    625: 875, 630: 885, 635: 890, 640: 900, 645: 905, 650: 910, 655: 920, 660: 925, 665: 935, 670: 940,
+    675: 945, 680: 955, 685: 960, 690: 970, 695: 975, 700: 980, 705: 990, 710: 995, 715: 1005, 720: 1010,
+    725: 1015, 730: 1025, 735: 1030, 740: 1040, 745: 1045, 750: 1050, 755: 1060, 760: 1065, 765: 1075, 770: 1080,
+    775: 1085, 780: 1095, 785: 1100, 790: 1110, 795: 1115, 800: 1120, 805: 1130, 810: 1135, 815: 1145, 820: 1150,
+    825: 1155, 830: 1165, 835: 1170, 840: 1180, 845: 1185, 850: 1190, 855: 1200, 860: 1205, 865: 1215, 870: 1220,
+    875: 1225, 880: 1235, 885: 1240, 890: 1250, 895: 1255, 900: 1260, 905: 1270, 910: 1275, 915: 1285, 920: 1290,
+    925: 1295, 930: 1305, 935: 1310, 940: 1320, 945: 1325, 950: 1330, 955: 1340, 960: 1345, 965: 1355, 970: 1360,
+    975: 1365, 980: 1375, 985: 1380, 990: 1390, 995: 1395, 1000: 1400,
 }
 
 # ==========================================
@@ -71,7 +81,7 @@ def generate_my_code(source_channel_id):
     return f"{prefix}{daily_post_counter:02d}{today_day}{today_month}"
 
 # ==========================================
-# 3. دوال استخراج النوع والمقاس والسعر
+# 3. دوال استخراج البيانات
 # ==========================================
 
 def normalize_numbers(text):
@@ -132,7 +142,7 @@ def extract_and_modify_price(text, source_name):
     return "حددنا لك"
 
 # ==========================================
-# 4. دالة تجميع النص النهائي
+# 4. دالة بناء النص النهائي
 # ==========================================
 
 def build_final_text(original_text, source_channel_id):
@@ -143,153 +153,39 @@ def build_final_text(original_text, source_channel_id):
     text_lower = processed_text.lower()
 
     product_name = extract_product_type(processed_text, source_channel_id)
-    
     size_info = ""
     if product_name in ["خاتم", "خواتم"]:
         size_info = get_ring_size_info(processed_text)
     
     product_size = f"{product_name} {size_info}" if size_info else product_name
-
     my_new_code = generate_my_code(source_channel_id)
     new_price = extract_and_modify_price(processed_text, source_channel_id)
 
-    final_text = ""
-
+    # القوالب (Templates)
     if "بيرسينج بول باك مع تكه كونكت فصوص زيركون" in text_lower:
-        final_text = f"""بيرسينج بول باك مع تكه كونكت فصوص زيركون قمر قوي💕
-عمود استانلس بيور عيار ٣١٦ 💎💯
-لمسة شيك وجودة باينة من أول نظرة ✨
-الكود : 🔖  {my_new_code}
-البيرسينج فردة واحدة بسعر : 💰   {new_price}   ج  🔥"""
-
+        final_text = f"بيرسينج بول باك مع تكه كونكت فصوص زيركون قمر قوي💕\nعمود استانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨\nالكود : 🔖  {my_new_code}\nالبيرسينج فردة واحدة بسعر : 💰   {new_price}   ج  🔥"
     elif "بيرسينج بول باك" in text_lower:
-        final_text = f"""بيرسينج بول باك شيك قوي💕💕
-عمود استانلس بيور عيار ٣١٦ فصوص زيركون💎💯
-لمسة شيك وجودة باينة من أول نظرة ✨️
-الكود : 🔖  {my_new_code}
-البيرسينج فردة واحدة بسعر : 💰   {new_price}   ج  🔥"""
-
-    elif "بيرسينج تكه" in text_lower or "قطرة ٨ مم" in text_lower or "ينفع اطفالي" in text_lower:
-        final_text = f"""كوليكشن بيرسينج تكه قطرة ٨ مم ينفع اطفالي شيك قوي💕💕
-عمود استانلس بيور عيار ٣١٦ فصوص زيركون💎💯
-لمسة شيك وجودة باينة من أول نظرة ✨️
-الكود : 🔖  {my_new_code}
-الفردة بسعر : 💰   {new_price}   ج  🔥"""
-
-    elif "الدلاية جولد بليتد" in text_lower or "الدلاية دهب صيني" in text_lower or "الدلاية بلاتين" in text_lower:
+        final_text = f"بيرسينج بول باك شيك قوي💕💕\nعمود استانلس بيور عيار ٣١٦ فصوص زيركون💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨️\nالكود : 🔖  {my_new_code}\nالبيرسينج فردة واحدة بسعر : 💰   {new_price}   ج  🔥"
+    elif "بيرسينج تكه" in text_lower or "قطرة ٨ مم" in text_lower:
+        final_text = f"كوليكشن بيرسينج تكه قطرة ٨ مم ينفع اطفالي شيك قوي💕💕\nعمود استانلس بيور عيار ٣١٦ فصوص زيركون💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨️\nالكود : 🔖  {my_new_code}\nالفردة بسعر : 💰   {new_price}   ج  🔥"
+    elif any(x in text_lower for x in ["الدلاية جولد بليتد", "الدلاية دهب صيني", "الدلاية بلاتين"]):
         dalaia_type = "الدلاية جولد بليتد"
-        if "الدلاية دهب صيني" in text_lower: dalaia_type = "الدلاية دهب صيني"
-        elif "الدلاية بلاتين" in text_lower: dalaia_type = "الدلاية بلاتين"
-        
-        final_text = f"""سلسلة تريندي قمر قوي 💕💕
-استانلس بيور عيار ٣١٦ 💎💯
-⚠️ {dalaia_type}
-الكود : 🔖  {my_new_code}
-بسعر : 💰   {new_price}   ج  🔥"""
-
+        if "دهب صيني" in text_lower: dalaia_type = "الدلاية دهب صيني"
+        elif "بلاتين" in text_lower: dalaia_type = "الدلاية بلاتين"
+        final_text = f"سلسلة تريندي قمر قوي 💕💕\nاستانلس بيور عيار ٣١٦ 💎💯\n⚠️ {dalaia_type}\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
     elif "دهب صيني فصوص زيركون" in text_lower:
-        final_text = f"""{product_size} شيك قوي 💛✨
-دهب صيني فصوص زيركون ✨
-لمعة حلوة وشكل شيك يلفت النظر 💛
-بيدي إحساس الدهب من غير تكلفة 💸
-الكود : 🔖  {my_new_code}
-بسعر : 💰   {new_price}   ج  🔥"""
-
-    elif "بانجل" in text_lower or "بانجلز" in text_lower:
-        final_text = f"""كوليكشن بانجلز تريندي بالوانها 🌈💖
-ألوان حلوة وشياكة بسيطة تكمل أي لوك 👌
-خفيف ومريح على الإيد، يدي لمسة مميزة كل يوم ✨
-الكود : 🔖  {my_new_code}
-بسعر : 💰   {new_price}   ج  🔥"""
-
-    elif "الغويشه الاستك" in text_lower or "استك التريند" in text_lower:
-        final_text = f"""الغويشه الاستك التريند فى shein
-غويشه استك تلبس اى مقاس خامه اكلريك و عاج قمر قوي 💕
-الكود : 🔖  {my_new_code}
-بسعر : 💰   {new_price}   ج  🔥"""
-
-    elif "تشارمز إيطاليان" in text_lower:
-        final_text = f"""تشارمز إيطاليان برسليت ✨💕
-تفصيلة مميزة تكمّل شكل الإيد ببساطة 💖
-ستايل شيك ينفع كل يوم وكل خروجة 👌
-الكود : 🔖  {my_new_code}
-بسعر : 💰   {new_price}   ج  🔥"""
-
-    elif "حزام معدن" in text_lower:
-        final_text = f"""حزام معدن تريندي ✨
-من أحدث موديلات SHEIN ويكمّل أي لوك بسهولة 👌
-تفصيلة بسيطة بس بتفرق في الشكل 💛
-الكود : 🔖  {my_new_code}
-بسعر : 💰   {new_price}   ج  🔥"""
-
-    elif "حلقان اكليرك" in text_lower:
-        final_text = f"""كوليكشن حلقان أكليرك ✨
-ألوان جذابة ولمسة شيك تكمّل أي لوك 👌
-خفيفة ومناسبة لكل خروجة 💖
-الكود : 🔖  {my_new_code}
-بسعر : 💰   {new_price}   ج  🔥"""
-
-    elif "ميدالية تريندي" in text_lower:
-        final_text = f"""ميدالية تريندي ✨🔑
-تفصيلة على الموضة تكمّل شنطتك أو مفاتيحك بسهولة 👌
-لمسة شيك تفرق في الشكل 💖
-الكود : 🔖  {my_new_code}
-بسعر : 💰   {new_price}   ج  🔥"""
-
-    elif "كف استانلس" in text_lower or "كف استالنس" in text_lower:
-        final_text = f"""هاند تشين قمر قوي💕
-استانلس بيور عيار ٣١٦ 💎💯
-لمسة شيك وجودة باينة من أول نظرة ✨
-الكود : 🔖  {my_new_code}
-بسعر : 💰   {new_price}   ج  🔥"""
-
+        final_text = f"{product_size} شيك قوي 💛✨\nدهب صيني فصوص زيركون ✨\nلمعة حلوة وشكل شيك يلفت النظر 💛\nبيدي إحساس الدهب من غير تكلفة 💸\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
+    elif "بانجل" in text_lower:
+        final_text = f"كوليكشن بانجلز تريندي بالوانها 🌈💖\nألوان حلوة وشياكة بسيطة تكمل أي لوك 👌\nخفيف ومريح على الإيد، يدي لمسة مميزة كل يوم ✨\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
+    elif "استانلس" in text_lower or "استالنس" in text_lower:
+        final_text = f"{product_size} قمر قوي💕\nاستانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
     else:
-        if "ستانلس" in text_lower or "استالنس" in text_lower:
-            final_text = f"""{product_size} قمر قوي💕
-استانلس بيور عيار ٣١٦ 💎💯
-لمسة شيك وجودة باينة من أول نظرة ✨
-الكود : 🔖  {my_new_code}
-بسعر : 💰   {new_price}   ج  🔥"""
-        else:
-            final_text = f"""{product_size} مميز جداً ✨
-لو عايز تتميز دوس على الطلب 💎
-الكود : 🔖  {my_new_code}
-بسعر : 💰   {new_price}   ج  🔥"""
+        final_text = f"{product_size} مميز جداً ✨\nلو عايز تتميز دوس على الطلب 💎\nالكود : 🔖  {my_new_code}\nبسعر : 💰   {new_price}   ج  🔥"
 
-    final_text = re.sub(r'\s+', ' ', final_text).strip()
-    
     return final_text, my_new_code
 
 # ==========================================
-# 5. دالة إرسال المنشور
-# ==========================================
-
-async def forward_post(client, message):
-    try:
-        orig = message.caption or message.text or ""
-        source_name = message.chat.username if message.chat.username else message.chat.id
-        
-        final_text, generated_code = build_final_text(orig, source_name)
-        
-        if message.photo:
-            path = await message.download()
-            await client.send_photo(TARGET_CHANNEL, path, caption=final_text)
-            try: os.remove(path)
-            except: pass
-        elif message.video:
-            path = await message.download()
-            await client.send_video(TARGET_CHANNEL, path, caption=final_text)
-            try: os.remove(path)
-            except: pass
-        elif message.text:
-            await client.send_message(TARGET_CHANNEL, final_text)
-            
-        print(f"✅ تم النقل | الكود الجديد: {generated_code}")
-    except Exception as e:
-        print(f"❌ خطأ: {e}")
-
-# ==========================================
-# 6. إعداد وتشغيل البوت
+# 5. تشغيل البوت
 # ==========================================
 
 app = Client(
@@ -300,10 +196,31 @@ app = Client(
     in_memory=True
 )
 
+async def forward_post(client, message):
+    try:
+        orig = message.caption or message.text or ""
+        source_name = message.chat.username if message.chat.username else message.chat.id
+        final_text, generated_code = build_final_text(orig, source_name)
+        
+        if message.photo:
+            path = await message.download()
+            await client.send_photo(TARGET_CHANNEL, path, caption=final_text)
+            if os.path.exists(path): os.remove(path)
+        elif message.video:
+            path = await message.download()
+            await client.send_video(TARGET_CHANNEL, path, caption=final_text)
+            if os.path.exists(path): os.remove(path)
+        elif message.text:
+            await client.send_message(TARGET_CHANNEL, final_text)
+            
+        print(f"✅ تم النقل | الكود: {generated_code}")
+    except Exception as e:
+        print(f"❌ خطأ: {e}")
+
 @app.on_message(filters.chat(SOURCE_CHANNELS) & ~filters.forwarded)
 async def new_post(client, message):
-    await asyncio.sleep(3) 
+    await asyncio.sleep(2) 
     await forward_post(client, message)
 
-print("🚀 البوت الذكي شغال (بدون واجهات، مباشر على السيرفر)...")
+print("🚀 البوت يعمل الآن بالأسعار الجديدة...")
 app.run()
