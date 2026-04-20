@@ -1,0 +1,19 @@
+# Telegram Auto Poster Bot
+
+بوت تيليجرام يقوم بنقل المنشورات من قنوات محددة إلى قناة مستهدفة مع تعديل الكود والسعر تلقائياً بناءً على جداول محددة.
+
+## الإعدادات المطلوبة (Environment Variables)
+
+يجب ضبط المتغيرات التالية في منصة الاستضافة (Render / Koyeb):
+
+- `API_ID`: معرف الـ API الخاص بك من my.telegram.org.
+- `API_HASH`: الـ Hash الخاص بك من my.telegram.org.
+- `SESSION_STRING`: كود الجلسة (Pyrogram Session String).
+- `SOURCE_CHANNELS`: أسماء أو معرفات القنوات المصدر (مفصولة بمسافات).
+- `TARGET_CHANNEL`: معرف القناة المستهدفة التي سيتم النشر فيها.
+
+## التشغيل
+
+لتشغيل البوت محلياً:
+1. قم بتثبيت المكتبات: `pip install -r requirements.txt`
+2. تشغيل البوت: `python main.py`
