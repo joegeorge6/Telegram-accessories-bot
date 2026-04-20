@@ -31,7 +31,7 @@ for ch in raw_channels:
         SOURCE_CHANNELS.append(ch)
 
 # ==========================================
-# 1. جدول الأسعار (محدث)
+# 1. جدول الأسعار
 # ==========================================
 PRICE_MAPPING = {
     25: 55, 30: 60, 35: 65, 40: 70, 45: 75, 50: 80, 55: 85, 60: 90, 65: 95, 70: 100,
@@ -57,7 +57,7 @@ PRICE_MAPPING = {
 }
 
 # ==========================================
-# 2. نظام الكود
+# 2. نظام الترقيم
 # ==========================================
 last_saved_date = None
 daily_post_counter = 0
@@ -89,9 +89,8 @@ def generate_my_code(source_channel_id):
     return f"{prefix}{daily_post_counter:02d}{today_day}{today_month}"
 
 # ==========================================
-# 3. دوال المعالجة والتحليل
+# 3. المعالجة
 # ==========================================
-
 def normalize_numbers(text):
     arabic_numbers = "٠١٢٣٤٥٦٧٨٩"
     english_numbers = "0123456789"
@@ -152,9 +151,13 @@ def build_final_text(original_text, source_channel_id):
     return final_text, my_new_code
 
 # ==========================================
-# 4. سيرفر الويب الوهمي لـ Koyeb
+# 4. سيرفر الويب الوهمي
 # ==========================================
 web_app = Flask(__name__)
+import logging
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR) # تقليل رسائل السيرفر
+
 @web_app.route('/')
 def home(): return "Bot is running!"
 
@@ -162,10 +165,11 @@ def run_web():
     web_app.run(host="0.0.0.0", port=8000)
 
 # ==========================================
-# 5. تشغيل البوت الأساسي
+# 5. تشغيل البوت
 # ==========================================
+# ملاحظة: تم تغيير المسار ليكون في الذاكرة تماماً لتجنب قفل القاعدة
 app = Client(
-    "auto_poster",
+    "auto_poster_session",
     api_id=API_ID,
     api_hash=API_HASH,
     session_string=SESSION_STRING,
@@ -174,9 +178,7 @@ app = Client(
 
 async def forward_post(client, message):
     try:
-        # فحص التاريخ
         if message.date < START_DATE:
-            print(f"⚠️ تجاهل رسالة قديمة من {message.chat.id} بتاريخ {message.date}")
             return
 
         orig = message.caption or message.text or ""
@@ -202,17 +204,14 @@ async def forward_post(client, message):
 @app.on_message(filters.chat(SOURCE_CHANNELS))
 async def new_post(client, message):
     source = message.chat.username or message.chat.id
-    print(f"📩 وصلت رسالة جديدة من القناة: {source}")
-    
     if message.forward_from_chat or message.forward_from:
-         print(f"⏩ تم تجاهل الرسالة لأنها محولة (Forwarded)")
          return
-         
+    print(f"📩 وصلت رسالة جديدة من: {source}")
     await asyncio.sleep(2)
     await forward_post(client, message)
 
 if __name__ == "__main__":
     Thread(target=run_web).start()
-    print(f"🚀 البوت يعمل الآن ويراقب القنوات: {SOURCE_CHANNELS}")
+    print("🚀 البوت يعمل الآن ويراقب القنوات...")
     print(f"📅 تاريخ البدء المعتمد: {START_DATE}")
     app.run()
