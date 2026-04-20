@@ -15,9 +15,11 @@ SESSION_STRING = os.environ.get("SESSION_STRING", "")
 TARGET_CHANNEL = os.environ.get("TARGET_CHANNEL", "")
 
 START_DATE_STR = os.environ.get("START_DATE", "2024-01-01")
+
 def parse_date(date_str):
     for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%m-%d-%Y"):
         try:
+            # نجعل التاريخ "aware" بمنطقة UTC ليتوافق مع تيليجرام
             return datetime.strptime(date_str, fmt).replace(tzinfo=timezone.utc)
         except ValueError:
             continue
@@ -31,10 +33,11 @@ for ch in raw_channels:
     if ch.startswith("-"):
         try: SOURCE_CHANNELS.append(int(ch))
         except: SOURCE_CHANNELS.append(ch)
-    else: SOURCE_CHANNELS.append(ch)
+    else:
+        SOURCE_CHANNELS.append(ch)
 
 # ==========================================
-# 1. جدول الأسعار (كامل)
+# 1. جدول الأسعار
 # ==========================================
 PRICE_MAPPING = {
     25: 55, 30: 60, 35: 65, 40: 70, 45: 75, 50: 80, 55: 85, 60: 90, 65: 95, 70: 100,
@@ -88,13 +91,11 @@ def build_final_text(original_text, source_channel_id):
     processed_text = normalize_numbers(original_text or "")
     text_lower = processed_text.lower()
     
-    # استخراج النوع
     product_name = "قطعة"
     keywords = ["طقم", "سلسلة", "اسورة", "اسوره", "خاتم", "خواتم", "حلق", "حلقان", "كوليه", "خلخال", "بيرسينج", "بروش", "انسيال"]
     for word in keywords:
         if word in text_lower: product_name = word; break
     
-    # السعر
     new_price = "حددنا لك"
     normal_match = re.search(r'(\d+)(\s*جنيه|\s*ج\.?|\s*ج)', processed_text)
     if normal_match:
@@ -102,7 +103,6 @@ def build_final_text(original_text, source_channel_id):
         new_price = str(PRICE_MAPPING.get(p, p + 30))
 
     my_new_code = generate_my_code(source_channel_id)
-    
     return f"{product_name} قمر قوي💕\nاستانلس بيور عيار ٣١٦ 💎💯\nالكود : 🔖 {my_new_code}\nبسعر : 💰 {new_price} ج 🔥", my_new_code
 
 # ==========================================
@@ -132,12 +132,18 @@ async def run_bot():
     await app.start()
     print(f"⏳ جاري سحب الشغل القديم من تاريخ {START_DATE}...")
     for chat_id in SOURCE_CHANNELS:
-        print(f"📂 فحص القناة: {chat_id}")
-        async for message in app.get_chat_history(chat_id, limit=30):
-            if message.date >= START_DATE and not (message.forward_from_chat or message.forward_from):
-                await process_and_send(message)
-                await asyncio.sleep(1)
-    print("✨ انتهى السحب القديم. البوت الآن يراقب الجديد.")
+        try:
+            print(f"📂 فحص القناة: {chat_id}")
+            async for message in app.get_chat_history(chat_id, limit=50):
+                # التأكد من مقارنة تاريخين aware
+                msg_date = message.date.replace(tzinfo=timezone.utc) if message.date.tzinfo is None else message.date
+                if msg_date >= START_DATE and not (message.forward_from_chat or message.forward_from):
+                    await process_and_send(message)
+                    await asyncio.sleep(1.5)
+        except Exception as e:
+            print(f"⚠️ خطأ فحص القناة {chat_id}: {e}")
+            
+    print("✨ انتهى السحب القديم. البوت يراقب الجديد الآن.")
     
     @app.on_message(filters.chat(SOURCE_CHANNELS) & ~filters.forwarded)
     async def live_updates(client, message):
@@ -148,4 +154,6 @@ async def run_bot():
 
 if __name__ == "__main__":
     Thread(target=lambda: web_app.run(host="0.0.0.0", port=8000)).start()
-    asyncio.get_event_loop().run_until_complete(run_bot())
+    # تشغيل البوت باستخدام Event Loop الحالية
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(run_bot())
