@@ -36,10 +36,8 @@ END_DATE = raw_end_date.replace(hour=23, minute=59, second=59)
 raw_channels = os.environ.get("SOURCE_CHANNELS", "").split()
 SOURCE_CHANNELS = [int(ch) if ch.startswith("-") else ch for ch in raw_channels]
 
-# جدول الأسعار المحدث
 RETAIL_MAPPING = { 
-    15: 45, 20: 50, # الأسعار الجديدة المطلوبة
-    25: 55, 30: 60, 35: 65, 40: 70, 45: 75, 50: 80, 55: 85, 60: 90, 65: 95, 70: 100, 75: 105, 80: 115, 85: 120, 90: 130, 95: 135, 100: 140, 105: 150, 110: 155, 115: 165, 120: 170, 125: 175, 130: 185, 135: 190, 140: 200, 145: 205, 150: 210, 155: 220, 160: 225, 165: 235, 170: 240, 175: 245, 180: 255, 185: 260, 190: 270, 195: 275, 200: 280, 205: 290, 210: 295, 215: 305, 220: 310, 225: 315, 230: 325, 235: 330, 240: 340, 245: 345, 250: 350, 255: 360, 260: 365, 265: 375, 270: 380, 275: 385, 280: 395, 285: 400, 290: 410, 295: 415, 300: 420, 305: 430, 310: 435, 315: 445, 320: 450, 325: 455, 330: 465, 335: 470, 340: 480, 345: 485, 350: 490, 355: 500, 360: 505, 365: 515, 370: 520, 375: 525, 380: 535, 385: 540, 390: 550, 395: 555, 400: 560, 405: 570, 410: 575, 415: 585, 420: 590, 425: 595, 430: 605, 435: 610, 440: 620, 445: 625, 450: 630, 455: 640, 460: 645, 465: 655, 470: 660, 475: 665, 480: 675, 485: 680, 490: 690, 495: 695, 500: 700, 505: 710, 510: 715, 515: 725, 520: 730, 525: 735, 530: 745, 535: 750, 540: 760, 545: 765, 550: 770, 555: 780, 560: 785, 565: 795, 570: 800, 575: 805, 580: 815, 585: 820, 590: 830, 595: 835, 600: 840, 605: 850, 610: 855, 615: 865, 620: 870, 625: 875, 630: 885, 635: 890, 640: 900, 645: 905, 650: 910, 655: 920, 660: 925, 665: 935, 670: 940, 675: 945, 680: 955, 685: 960, 690: 970, 695: 975, 700: 980, 705: 990, 710: 995, 715: 1005, 720: 1010, 725: 1015, 730: 1025, 735: 1030, 740: 1040, 745: 1045, 750: 1050, 755: 1060, 760: 1065, 765: 1075, 770: 1080, 775: 1085, 780: 1095, 785: 1100, 790: 1110, 795: 1115, 800: 1120, 805: 1130, 810: 1135, 815: 1145, 820: 1150, 825: 1155, 830: 1165, 835: 1170, 840: 1180, 845: 1185, 850: 1190, 855: 1200, 860: 1205, 865: 1215, 870: 1220, 875: 1225, 880: 1235, 885: 1240, 890: 1250, 895: 1255, 900: 1260, 905: 1270, 910: 1275, 915: 1285, 920: 1290, 925: 1295, 930: 1305, 935: 1310, 940: 1320, 945: 1325, 950: 1330, 955: 1340, 960: 1345, 965: 1355, 970: 1360, 975: 1365, 980: 1375, 985: 1380, 990: 1390, 995: 1395, 1000: 1400 
+    15: 45, 20: 50, 25: 55, 30: 60, 35: 65, 40: 70, 45: 75, 50: 80, 55: 85, 60: 90, 65: 95, 70: 100, 75: 105, 80: 115, 85: 120, 90: 130, 95: 135, 100: 140, 105: 150, 110: 155, 115: 165, 120: 170, 125: 175, 130: 185, 135: 190, 140: 200, 145: 205, 150: 210, 155: 220, 160: 225, 165: 235, 170: 240, 175: 245, 180: 255, 185: 260, 190: 270, 195: 275, 200: 280, 205: 290, 210: 295, 215: 305, 220: 310, 225: 315, 230: 325, 235: 330, 240: 340, 245: 345, 250: 350, 255: 360, 260: 365, 265: 375, 270: 380, 275: 385, 280: 395, 285: 400, 290: 410, 295: 415, 300: 420, 305: 430, 310: 435, 315: 445, 320: 450, 325: 455, 330: 465, 335: 470, 340: 480, 345: 485, 350: 490, 355: 500, 360: 505, 365: 515, 370: 520, 375: 525, 380: 535, 385: 540, 390: 550, 395: 555, 400: 560, 405: 570, 410: 575, 415: 585, 420: 590, 425: 595, 430: 605, 435: 610, 440: 620, 445: 625, 450: 630, 455: 640, 460: 645, 465: 655, 470: 660, 475: 665, 480: 675, 485: 680, 490: 690, 495: 695, 500: 700, 505: 710, 510: 715, 515: 725, 520: 730, 525: 735, 530: 745, 535: 750, 540: 760, 545: 765, 550: 770, 555: 780, 560: 785, 565: 795, 570: 800, 575: 805, 580: 815, 585: 820, 590: 830, 595: 835, 600: 840, 605: 850, 610: 855, 615: 865, 620: 870, 625: 875, 630: 885, 635: 890, 640: 900, 645: 905, 650: 910, 655: 920, 660: 925, 665: 935, 670: 940, 675: 945, 680: 955, 685: 960, 690: 970, 695: 975, 700: 980, 705: 990, 710: 995, 715: 1005, 720: 1010, 725: 1015, 730: 1025, 735: 1030, 740: 1040, 745: 1045, 750: 1050, 755: 1060, 760: 1065, 765: 1075, 770: 1080, 775: 1085, 780: 1095, 785: 1100, 790: 1110, 795: 1115, 800: 1120, 805: 1130, 810: 1135, 815: 1145, 820: 1150, 825: 1155, 830: 1165, 835: 1170, 840: 1180, 845: 1185, 850: 1190, 855: 1200, 860: 1205, 865: 1215, 870: 1220, 875: 1225, 880: 1235, 885: 1240, 890: 1250, 895: 1255, 900: 1260, 905: 1270, 910: 1275, 915: 1285, 920: 1290, 925: 1295, 930: 1305, 935: 1310, 940: 1320, 945: 1325, 950: 1330, 955: 1340, 960: 1345, 965: 1355, 970: 1360, 975: 1365, 980: 1375, 985: 1380, 990: 1390, 995: 1395, 1000: 1400 
 }
 
 # ==========================================
@@ -66,10 +64,17 @@ def normalize_numbers(text):
     return text.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
 
 def build_text(original_text, source_id, msg_date):
-    if not original_text: return ""
+    prefix = SUPPLIER_PREFIX_MAP.get(source_id, "")
+    my_code = generate_my_code(source_id, msg_date)
+    
+    # إذا كان النص فارغاً تماماً (مثل حالة الفيديوهات في القناة P)
+    if not original_text or original_text.strip() == "":
+        if prefix == "P":
+            return f"الكود : 🔖 {my_code}\nالسعر : 💰 ج 🔥"
+        return None
+
     if any(word in original_text for word in REVIEW_KEYWORDS): return None
     processed_text = normalize_numbers(original_text)
-    prefix = SUPPLIER_PREFIX_MAP.get(source_id, "")
     
     piece_type_name = ""
     if prefix == "P":
@@ -92,7 +97,6 @@ def build_text(original_text, source_id, msg_date):
             if online_m: found_price_val = int(online_m.group(1))
             elif nums: found_price_val = nums[0]
 
-    # سحب السعر من الجدول فقط (بدون زيادات تلقائية)
     final_price_val = RETAIL_MAPPING.get(found_price_val, "")
     price_str_ar = convert_to_arabic_numbers(final_price_val)
     
@@ -102,7 +106,6 @@ def build_text(original_text, source_id, msg_date):
 
     clean_lines = [l.strip() for l in processed_text.split('\n') if not any(re.search(p, l, re.IGNORECASE) for p in patterns) and l.strip()]
     description = "\n".join(clean_lines)
-    my_code = generate_my_code(source_id, msg_date)
 
     if prefix == "P" and piece_type_name:
         if not description:
@@ -112,7 +115,7 @@ def build_text(original_text, source_id, msg_date):
     return f"{description}\n\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_str_ar} ج 🔥"
 
 # ==========================================
-# 3. نظام النشر المتطور
+# 3. نظام النشر الآمن
 # ==========================================
 async def safe_send(func, *args, **kwargs):
     while True:
@@ -125,10 +128,12 @@ async def safe_send(func, *args, **kwargs):
             break
 
 async def send_to_targets(client, messages, source_id):
-    main_msg = next((m for m in messages if m.caption), messages[0])
+    main_msg = next((m for m in messages if (m.caption or m.text)), messages[0])
     msg_date = main_msg.date.replace(tzinfo=timezone.utc)
     retail_text = build_text(main_msg.caption or main_msg.text, source_id, msg_date)
-    if not retail_text: return
+    
+    # إذا كان المنشور ليس له نص ولا ينتمي للقناة P، يتم تجاهله
+    if not retail_text and SUPPLIER_PREFIX_MAP.get(source_id) != "P": return
     
     try:
         for m in messages:
@@ -136,8 +141,9 @@ async def send_to_targets(client, messages, source_id):
             elif m.video: await safe_send(client.send_video, RETAIL_CHANNEL, m.video.file_id)
             await asyncio.sleep(3) 
         
-        await safe_send(client.send_message, RETAIL_CHANNEL, retail_text)
-        await asyncio.sleep(4)
+        if retail_text:
+            await safe_send(client.send_message, RETAIL_CHANNEL, retail_text)
+            await asyncio.sleep(4)
     except: pass
 
 async def fetch_history(client):
@@ -168,7 +174,7 @@ async def fetch_history(client):
 # ==========================================
 # 4. تشغيل البوت
 # ==========================================
-app = Client("retail_v10", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
+app = Client("retail_v11", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
 
 @app.on_message(filters.chat(SOURCE_CHANNELS) & ~filters.forwarded)
 async def main_handler(client, message):
@@ -177,7 +183,7 @@ async def main_handler(client, message):
 
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Retail Pro Bot v10.0 Active!"
+def home(): return "Retail Pro Bot v11.0 Active!"
 
 async def start_bot():
     await app.start()
