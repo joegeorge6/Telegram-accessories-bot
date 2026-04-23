@@ -122,10 +122,10 @@ async def send_to_targets(client, messages, source_id):
         for m in messages:
             if m.photo: await safe_send(client.send_photo, RETAIL_CHANNEL, m.photo.file_id)
             elif m.video: await safe_send(client.send_video, RETAIL_CHANNEL, m.video.file_id)
-            await asyncio.sleep(1.5) # فاصل زمني بين كل صورة لتقليل الحظر
+            await asyncio.sleep(3)  # تم التعديل من 1.5 إلى 3
         
         await safe_send(client.send_message, RETAIL_CHANNEL, retail_text)
-        await asyncio.sleep(2) # فاصل بين كل موديل وموديل
+        await asyncio.sleep(4)  # تم التعديل من 2 إلى 4
     except: pass
 
 async def fetch_history(client):
