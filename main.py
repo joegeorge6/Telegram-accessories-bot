@@ -16,6 +16,13 @@ SESSION_STRING = os.environ.get("SESSION_STRING", "")
 
 RETAIL_CHANNEL = "@girlsfashionesta"
 
+def convert_to_arabic_numbers(text):
+    if not text: return ""
+    western = "0123456789"
+    arabic = "٠١٢٣٤٥٦٧٨٩"
+    table = str.maketrans(western, arabic)
+    return str(text).translate(table)
+
 def parse_date(date_str, default_date):
     for fmt in ("%d-%m-%Y", "%Y-%m-%d", "%m-%d-%Y"):
         try: return datetime.strptime(date_str, fmt).replace(tzinfo=timezone.utc)
@@ -48,6 +55,7 @@ def generate_my_code(source_channel_id, msg_date):
         last_saved_date, daily_post_counter = today_str, 1
     else: daily_post_counter += 1
     prefix = SUPPLIER_PREFIX_MAP.get(source_channel_id, "UN")
+    # الكود يظل بالأرقام الإنجليزية كما طلبت
     return f"{prefix}{daily_post_counter:02d}{today_str}"
 
 def normalize_numbers(text):
@@ -81,8 +89,16 @@ def build_text(original_text, source_id, msg_date):
             if online_m: found_price_val = int(online_m.group(1))
             elif nums: found_price_val = nums[0]
 
-    final_price_val = RETAIL_MAPPING.get(found_price_val, "")
-    price_str = f"{final_price_val}" if final_price_val else ""
+    # حساب السعر
+    if found_price_val and found_price_val in RETAIL_MAPPING:
+        final_price_val = RETAIL_MAPPING[found_price_val]
+    elif found_price_val:
+        final_price_val = found_price_val + 30 
+    else:
+        final_price_val = ""
+
+    # السعر فقط هو الذي يتحول للأرقام العربية
+    price_str_ar = convert_to_arabic_numbers(final_price_val)
     
     patterns = [r'.*(?:اونلاين|online).*', r'.*(?:سعر القطعه|القطعه بـ|price|بسعر|جمله|جملة).*', r'.*(?:بدل|بكام|عرض خاص|عرض|بس).*', r'^[A-Z]+\d+.*', r'^\d+\s*(?:ج|جنيه)?\s*$']
     if prefix == "I": processed_text = re.sub(r'infinity', 'فاشونيستا', processed_text, flags=re.IGNORECASE)
@@ -94,22 +110,22 @@ def build_text(original_text, source_id, msg_date):
 
     if prefix == "P" and piece_type_name:
         if not description:
-            return f"{piece_type_name} \"شيك قوي\"💕💕\nاستانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨️\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str} ج 🔥"
+            return f"{piece_type_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨️\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str_ar} ج 🔥"
         else:
-            return f"{piece_type_name}\n{description}\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str} ج 🔥"
-    return f"{description}\n\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_str} ج 🔥"
+            return f"{piece_type_name}\n{description}\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str_ar} ج 🔥"
+    return f"{description}\n\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_str_ar} ج 🔥"
 
 # ==========================================
-# 3. نظام النشر المتطور مع التعامل مع الحظر المؤقت
+# 3. نظام النشر المتطور
 # ==========================================
 async def safe_send(func, *args, **kwargs):
     while True:
         try: return await func(*args, **kwargs)
         except FloodWait as e:
-            print(f"⚠️ حظر مؤقت من تليجرام! انتظار {e.value} ثانية...")
+            print(f"⚠️ انتظار {e.value} ثانية...")
             await asyncio.sleep(e.value)
         except Exception as e:
-            print(f"❌ خطأ غير متوقع: {e}")
+            print(f"❌ خطأ: {e}")
             break
 
 async def send_to_targets(client, messages, source_id):
@@ -122,10 +138,10 @@ async def send_to_targets(client, messages, source_id):
         for m in messages:
             if m.photo: await safe_send(client.send_photo, RETAIL_CHANNEL, m.photo.file_id)
             elif m.video: await safe_send(client.send_video, RETAIL_CHANNEL, m.video.file_id)
-            await asyncio.sleep(3)  # تم التعديل من 1.5 إلى 3
+            await asyncio.sleep(3) 
         
         await safe_send(client.send_message, RETAIL_CHANNEL, retail_text)
-        await asyncio.sleep(4)  # تم التعديل من 2 إلى 4
+        await asyncio.sleep(4)
     except: pass
 
 async def fetch_history(client):
@@ -151,12 +167,12 @@ async def fetch_history(client):
                 g_msgs, curr_gid = [], None
                 await send_to_targets(client, [msg], channel)
         if g_msgs: await send_to_targets(client, g_msgs, channel)
-    print("✅ تم الانتهاء من السحب بالكامل.")
+    print("✅ تم الانتهاء.")
 
 # ==========================================
 # 4. تشغيل البوت
 # ==========================================
-app = Client("retail_v6", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
+app = Client("retail_v9", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
 
 @app.on_message(filters.chat(SOURCE_CHANNELS) & ~filters.forwarded)
 async def main_handler(client, message):
@@ -165,7 +181,7 @@ async def main_handler(client, message):
 
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Retail Pro Bot v6.0 Active!"
+def home(): return "Retail Pro Bot v9.0 Active!"
 
 async def start_bot():
     await app.start()
