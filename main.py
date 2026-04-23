@@ -24,14 +24,21 @@ def convert_to_arabic_numbers(text):
     return str(text).translate(table)
 
 def parse_date(date_str, default_date):
+    if not date_str or date_str.strip() == "": return default_date
+    # إذا كتب المستخدم 17-04 فقط، نضيف السنة الحالية
+    if len(date_str.split('-')) == 2:
+        date_str += f"-{datetime.now().year}"
     for fmt in ("%d-%m-%Y", "%Y-%m-%d", "%m-%d-%Y"):
         try: return datetime.strptime(date_str, fmt).replace(tzinfo=timezone.utc)
         except: continue
     return default_date
 
 START_DATE = parse_date(os.environ.get("START_DATE", ""), datetime(2026, 4, 10, tzinfo=timezone.utc))
-raw_end_date = parse_date(os.environ.get("END_DATE", ""), datetime.now(timezone.utc))
-END_DATE = raw_end_date.replace(hour=23, minute=59, second=59)
+# جعل تاريخ النهاية ديناميكياً (يُحسب عند الحاجة)
+def get_current_end_date():
+    raw_end = os.environ.get("END_DATE", "")
+    if not raw_end: return datetime.now(timezone.utc).replace(hour=23, minute=59, second=59)
+    return parse_date(raw_end, datetime.now(timezone.utc)).replace(hour=23, minute=59, second=59)
 
 raw_channels = os.environ.get("SOURCE_CHANNELS", "").split()
 SOURCE_CHANNELS = [int(ch) if ch.startswith("-") else ch for ch in raw_channels]
@@ -67,10 +74,8 @@ def build_text(original_text, source_id, msg_date):
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "")
     my_code = generate_my_code(source_id, msg_date)
     
-    # إذا كان النص فارغاً تماماً (مثل حالة الفيديوهات في القناة P)
     if not original_text or original_text.strip() == "":
-        if prefix == "P":
-            return f"الكود : 🔖 {my_code}\nالسعر : 💰 ج 🔥"
+        if prefix == "P": return f"الكود : 🔖 {my_code}\nالسعر : 💰 ج 🔥"
         return None
 
     if any(word in original_text for word in REVIEW_KEYWORDS): return None
@@ -100,39 +105,40 @@ def build_text(original_text, source_id, msg_date):
     final_price_val = RETAIL_MAPPING.get(found_price_val, "")
     price_str_ar = convert_to_arabic_numbers(final_price_val)
     
-    patterns = [r'.*(?:اونلاين|online).*', r'.*(?:سعر القطعه|القطعه بـ|price|بسعر|جمله|جملة).*', r'.*(?:بدل|بكام|عرض خاص|عرض|بس).*', r'^[A-Z]+\d+.*', r'^\d+\s*(?:ج|جنيه)?\s*$']
+    patterns = [r'.*(?:اونلاين|online).*', r'.*(?:سعر القطعه|القطعه بـ|price|بسعر|جمله|جملة).*', r'.*(?:بدل|بكام|عرض خاص|عرض|بس).*', r'.*(?:الكود|السعر|بسعر).*[:：].*', r'^[A-Z]+\d+.*', r'^\d+\s*(?:ج|جنيه)?\s*$']
     if prefix == "I": processed_text = re.sub(r'infinity', 'فاشونيستا', processed_text, flags=re.IGNORECASE)
     if prefix == "AS": processed_text = re.sub(r'ختم\s*AS', '', processed_text, flags=re.IGNORECASE)
 
     clean_lines = [l.strip() for l in processed_text.split('\n') if not any(re.search(p, l, re.IGNORECASE) for p in patterns) and l.strip()]
     description = "\n".join(clean_lines)
 
-    if prefix == "P" and piece_type_name:
-        if not description:
-            return f"{piece_type_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨️\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str_ar} ج 🔥"
-        else:
-            return f"{piece_type_name}\n{description}\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str_ar} ج 🔥"
+    if prefix == "P":
+        if piece_type_name and description.startswith(piece_type_name): final_desc = description
+        elif piece_type_name:
+            if not description: final_desc = f"{piece_type_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨️"
+            else: final_desc = f"{piece_type_name}\n{description}"
+        else: final_desc = description
+        return f"{final_desc}\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str_ar} ج 🔥"
+    
     return f"{description}\n\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_str_ar} ج 🔥"
 
 # ==========================================
-# 3. نظام النشر الآمن
+# 3. نظام النشر المتطور واللحظي (Albums Support)
 # ==========================================
+media_groups = {}
+
 async def safe_send(func, *args, **kwargs):
     while True:
         try: return await func(*args, **kwargs)
         except FloodWait as e:
-            print(f"⚠️ انتظار {e.value} ثانية...")
+            print(f"⚠️ حظر مؤقت! انتظار {e.value} ثانية...")
             await asyncio.sleep(e.value)
-        except Exception as e:
-            print(f"❌ خطأ: {e}")
-            break
+        except: break
 
 async def send_to_targets(client, messages, source_id):
     main_msg = next((m for m in messages if (m.caption or m.text)), messages[0])
     msg_date = main_msg.date.replace(tzinfo=timezone.utc)
     retail_text = build_text(main_msg.caption or main_msg.text, source_id, msg_date)
-    
-    # إذا كان المنشور ليس له نص ولا ينتمي للقناة P، يتم تجاهله
     if not retail_text and SUPPLIER_PREFIX_MAP.get(source_id) != "P": return
     
     try:
@@ -140,22 +146,22 @@ async def send_to_targets(client, messages, source_id):
             if m.photo: await safe_send(client.send_photo, RETAIL_CHANNEL, m.photo.file_id)
             elif m.video: await safe_send(client.send_video, RETAIL_CHANNEL, m.video.file_id)
             await asyncio.sleep(3) 
-        
         if retail_text:
             await safe_send(client.send_message, RETAIL_CHANNEL, retail_text)
             await asyncio.sleep(4)
     except: pass
 
 async def fetch_history(client):
-    print(f"🔎 سحب من {START_DATE} إلى {END_DATE}")
+    print(f"🔎 سحب من {START_DATE}...")
+    # تحديث الـ END_DATE لحظة البدء
+    current_limit = get_current_end_date()
     for channel in SOURCE_CHANNELS:
         all_messages = []
         async for msg in client.get_chat_history(channel):
             m_date = msg.date.replace(tzinfo=timezone.utc)
             if m_date < START_DATE: break
-            if m_date > END_DATE: continue
+            if m_date > current_limit: continue
             all_messages.append(msg)
-        
         all_messages.reverse()
         curr_gid, g_msgs = None, []
         for msg in all_messages:
@@ -169,21 +175,31 @@ async def fetch_history(client):
                 g_msgs, curr_gid = [], None
                 await send_to_targets(client, [msg], channel)
         if g_msgs: await send_to_targets(client, g_msgs, channel)
-    print("✅ تم الانتهاء.")
+    print("✅ تم الانتهاء من القديم.")
 
 # ==========================================
-# 4. تشغيل البوت
+# 4. تشغيل البوت مع معالجة الألبومات اللحظية
 # ==========================================
-app = Client("retail_v11", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
+app = Client("retail_v14", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
 
 @app.on_message(filters.chat(SOURCE_CHANNELS) & ~filters.forwarded)
 async def main_handler(client, message):
-    if not message.media_group_id:
+    # معالجة الألبومات (Media Groups) في الوقت الفعلي
+    if message.media_group_id:
+        gid = message.media_group_id
+        if gid not in media_groups:
+            media_groups[gid] = []
+            await asyncio.sleep(10) # انتظار تجميع الألبوم
+            await send_to_targets(client, media_groups[gid], message.chat.id)
+            del media_groups[gid]
+        media_groups[gid].append(message)
+    else:
+        # رسالة منفردة
         await send_to_targets(client, [message], message.chat.id)
 
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Retail Pro Bot v11.0 Active!"
+def home(): return "Retail Pro Bot v14.0 Active!"
 
 async def start_bot():
     await app.start()
