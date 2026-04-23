@@ -3,6 +3,7 @@ import re
 import asyncio
 from datetime import datetime, timezone
 from pyrogram import Client, filters, idle
+from pyrogram.errors import FloodWait
 from flask import Flask
 from threading import Thread
 
@@ -60,7 +61,6 @@ def build_text(original_text, source_id, msg_date):
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "")
     
     piece_type_name = ""
-    # القناة P - تحديد نوع القطعة من الكود
     if prefix == "P":
         type_match = re.search(r'([A-Z]+)\d+', processed_text, re.IGNORECASE)
         if type_match:
@@ -69,8 +69,6 @@ def build_text(original_text, source_id, msg_date):
 
     norm_orig = normalize_numbers(original_text)
     found_price_val = None
-    
-    # استخراج السعر بذكاء
     p_price_match = re.search(r'price\s*(\d+)', norm_orig, re.IGNORECASE)
     if p_price_match: found_price_val = int(p_price_match.group(1))
     
@@ -86,45 +84,34 @@ def build_text(original_text, source_id, msg_date):
     final_price_val = RETAIL_MAPPING.get(found_price_val, "")
     price_str = f"{final_price_val}" if final_price_val else ""
     
-    # تنظيف شامل وحذف كل ما يخص المصدر
-    patterns = [
-        r'.*(?:اونلاين|online).*', 
-        r'.*(?:سعر القطعه|القطعه بـ|price|بسعر|جمله|جملة).*', 
-        r'.*(?:بدل|بكام|عرض خاص|عرض|بس).*', 
-        r'^[A-Z]+\d+.*',
-        r'^\d+\s*(?:ج|جنيه)?\s*$'
-    ]
-    
+    patterns = [r'.*(?:اونلاين|online).*', r'.*(?:سعر القطعه|القطعه بـ|price|بسعر|جمله|جملة).*', r'.*(?:بدل|بكام|عرض خاص|عرض|بس).*', r'^[A-Z]+\d+.*', r'^\d+\s*(?:ج|جنيه)?\s*$']
     if prefix == "I": processed_text = re.sub(r'infinity', 'فاشونيستا', processed_text, flags=re.IGNORECASE)
     if prefix == "AS": processed_text = re.sub(r'ختم\s*AS', '', processed_text, flags=re.IGNORECASE)
 
-    clean_lines = []
-    for line in processed_text.split('\n'):
-        if not any(re.search(p, line, re.IGNORECASE) for p in patterns) and line.strip():
-            clean_lines.append(line.strip())
-            
+    clean_lines = [l.strip() for l in processed_text.split('\n') if not any(re.search(p, l, re.IGNORECASE) for p in patterns) and l.strip()]
     description = "\n".join(clean_lines)
     my_code = generate_my_code(source_id, msg_date)
 
-    # المنطق النهائي لترتيب النص للقناة P
-    if prefix == "P":
-        if piece_type_name:
-            if not description:
-                # الحالة: كود وسعر فقط في المصدر
-                return f"{piece_type_name} \"شيك قوي\"💕💕\nاستانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨️\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str} ج 🔥"
-            else:
-                # الحالة: كود وسعر + وصف موديل في المصدر
-                return f"{description}\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str} ج 🔥"
+    if prefix == "P" and piece_type_name:
+        if not description:
+            return f"{piece_type_name} \"شيك قوي\"💕💕\nاستانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨️\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str} ج 🔥"
         else:
-            # الحالة: لا يوجد كود أصلاً
-            return f"الكود : 🔖 {my_code}\nبسعر : 💰 {price_str} ج 🔥"
-    else:
-        # باقي القنوات
-        return f"{description}\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str} ج 🔥"
+            return f"{piece_type_name}\n{description}\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str} ج 🔥"
+    return f"{description}\n\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_str} ج 🔥"
 
 # ==========================================
-# 3. نظام النشر والسحب التاريخي
+# 3. نظام النشر المتطور مع التعامل مع الحظر المؤقت
 # ==========================================
+async def safe_send(func, *args, **kwargs):
+    while True:
+        try: return await func(*args, **kwargs)
+        except FloodWait as e:
+            print(f"⚠️ حظر مؤقت من تليجرام! انتظار {e.value} ثانية...")
+            await asyncio.sleep(e.value)
+        except Exception as e:
+            print(f"❌ خطأ غير متوقع: {e}")
+            break
+
 async def send_to_targets(client, messages, source_id):
     main_msg = next((m for m in messages if m.caption), messages[0])
     msg_date = main_msg.date.replace(tzinfo=timezone.utc)
@@ -133,13 +120,16 @@ async def send_to_targets(client, messages, source_id):
     
     try:
         for m in messages:
-            if m.photo: await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
-            elif m.video: await client.send_video(RETAIL_CHANNEL, m.video.file_id)
-        await client.send_message(RETAIL_CHANNEL, retail_text)
-    except Exception as e: print(f"Publish Error: {e}")
+            if m.photo: await safe_send(client.send_photo, RETAIL_CHANNEL, m.photo.file_id)
+            elif m.video: await safe_send(client.send_video, RETAIL_CHANNEL, m.video.file_id)
+            await asyncio.sleep(1.5) # فاصل زمني بين كل صورة لتقليل الحظر
+        
+        await safe_send(client.send_message, RETAIL_CHANNEL, retail_text)
+        await asyncio.sleep(2) # فاصل بين كل موديل وموديل
+    except: pass
 
 async def fetch_history(client):
-    print(f"🔎 سحب القطاعي من {START_DATE} إلى {END_DATE}")
+    print(f"🔎 سحب من {START_DATE} إلى {END_DATE}")
     for channel in SOURCE_CHANNELS:
         all_messages = []
         async for msg in client.get_chat_history(channel):
@@ -161,7 +151,7 @@ async def fetch_history(client):
                 g_msgs, curr_gid = [], None
                 await send_to_targets(client, [msg], channel)
         if g_msgs: await send_to_targets(client, g_msgs, channel)
-    print("✅ تم الانتهاء.")
+    print("✅ تم الانتهاء من السحب بالكامل.")
 
 # ==========================================
 # 4. تشغيل البوت
@@ -175,7 +165,7 @@ async def main_handler(client, message):
 
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Retail Pro Bot v5.2 Active!"
+def home(): return "Retail Pro Bot v6.0 Active!"
 
 async def start_bot():
     await app.start()
