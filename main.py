@@ -40,7 +40,6 @@ REVIEW_KEYWORDS = ["ريفيو", "ريفيوهات", "آراء", "اراء", "ر
 last_saved_date = None
 daily_post_counter = 0
 
-# تعديل: استخدام تاريخ المنشور الأصلي في الكود
 def generate_my_code(source_channel_id, msg_date):
     global last_saved_date, daily_post_counter
     today_str = msg_date.strftime("%d%m")
@@ -60,22 +59,18 @@ def build_text(original_text, source_id, msg_date):
     processed_text = normalize_numbers(original_text)
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "")
     
-    # القناة P - استخراج السعر بذكاء
+    piece_type_name = ""
+    # القناة P - تحديد نوع القطعة من الكود
     if prefix == "P":
-        p_match = re.search(r'^([A-Z]+)\d+\s+price\s+(\d+)', processed_text, re.IGNORECASE)
-        if p_match:
-            code_letter = p_match.group(1).upper()
-            prod_name = P_CHANNEL_TYPES.get(code_letter, "قطعة")
-            processed_text = re.sub(r'^[A-Z]+\d+\s+price\s+\d+', '', processed_text, flags=re.IGNORECASE).strip()
-            if not processed_text:
-                processed_text = f"{prod_name} قمر قوي💕\nاستانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨"
+        type_match = re.search(r'([A-Z]+)\d+', processed_text, re.IGNORECASE)
+        if type_match:
+            code_letters = type_match.group(1).upper()
+            piece_type_name = P_CHANNEL_TYPES.get(code_letters, "")
 
-    if prefix == "I": processed_text = re.sub(r'infinity', 'فاشونيستا', processed_text, flags=re.IGNORECASE)
-    if prefix == "AS": processed_text = re.sub(r'ختم\s*AS', '', processed_text, flags=re.IGNORECASE)
-
-    # استخراج السعر الأقل
     norm_orig = normalize_numbers(original_text)
     found_price_val = None
+    
+    # استخراج السعر بذكاء
     p_price_match = re.search(r'price\s*(\d+)', norm_orig, re.IGNORECASE)
     if p_price_match: found_price_val = int(p_price_match.group(1))
     
@@ -89,25 +84,43 @@ def build_text(original_text, source_id, msg_date):
             elif nums: found_price_val = nums[0]
 
     final_price_val = RETAIL_MAPPING.get(found_price_val, "")
-    price_str = f"{final_price_val} ج" if final_price_val else ""
+    price_str = f"{final_price_val}" if final_price_val else ""
     
-    # تنظيف شامل للأكواد وجمل العروض مع الإيموجي
+    # تنظيف شامل وحذف كل ما يخص المصدر
     patterns = [
         r'.*(?:اونلاين|online).*', 
         r'.*(?:سعر القطعه|القطعه بـ|price|بسعر|جمله|جملة).*', 
         r'.*(?:بدل|بكام|عرض خاص|عرض|بس).*', 
-        r'^[A-Z]+\d+.*', # مسح الأكواد مثل Cp2756 في بداية السطر
+        r'^[A-Z]+\d+.*',
         r'^\d+\s*(?:ج|جنيه)?\s*$'
     ]
     
+    if prefix == "I": processed_text = re.sub(r'infinity', 'فاشونيستا', processed_text, flags=re.IGNORECASE)
+    if prefix == "AS": processed_text = re.sub(r'ختم\s*AS', '', processed_text, flags=re.IGNORECASE)
+
     clean_lines = []
     for line in processed_text.split('\n'):
         if not any(re.search(p, line, re.IGNORECASE) for p in patterns) and line.strip():
             clean_lines.append(line.strip())
             
-    final_text = "\n".join(clean_lines)
+    description = "\n".join(clean_lines)
     my_code = generate_my_code(source_id, msg_date)
-    return f"{final_text}\n\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_str} 🔥"
+
+    # المنطق النهائي لترتيب النص للقناة P
+    if prefix == "P":
+        if piece_type_name:
+            if not description:
+                # الحالة: كود وسعر فقط في المصدر
+                return f"{piece_type_name} \"شيك قوي\"💕💕\nاستانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨️\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str} ج 🔥"
+            else:
+                # الحالة: كود وسعر + وصف موديل في المصدر
+                return f"{description}\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str} ج 🔥"
+        else:
+            # الحالة: لا يوجد كود أصلاً
+            return f"الكود : 🔖 {my_code}\nبسعر : 💰 {price_str} ج 🔥"
+    else:
+        # باقي القنوات
+        return f"{description}\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str} ج 🔥"
 
 # ==========================================
 # 3. نظام النشر والسحب التاريخي
@@ -116,7 +129,7 @@ async def send_to_targets(client, messages, source_id):
     main_msg = next((m for m in messages if m.caption), messages[0])
     msg_date = main_msg.date.replace(tzinfo=timezone.utc)
     retail_text = build_text(main_msg.caption or main_msg.text, source_id, msg_date)
-    if retail_text is None: return
+    if not retail_text: return
     
     try:
         for m in messages:
@@ -130,30 +143,30 @@ async def fetch_history(client):
     for channel in SOURCE_CHANNELS:
         all_messages = []
         async for msg in client.get_chat_history(channel):
-            msg_date = msg.date.replace(tzinfo=timezone.utc)
-            if msg_date < START_DATE: break
-            if msg_date > END_DATE: continue
+            m_date = msg.date.replace(tzinfo=timezone.utc)
+            if m_date < START_DATE: break
+            if m_date > END_DATE: continue
             all_messages.append(msg)
         
         all_messages.reverse()
-        current_group_id, group_msgs = None, []
+        curr_gid, g_msgs = None, []
         for msg in all_messages:
             if msg.media_group_id:
-                if msg.media_group_id == current_group_id: group_msgs.append(msg)
+                if msg.media_group_id == curr_gid: g_msgs.append(msg)
                 else:
-                    if group_msgs: await send_to_targets(client, group_msgs, channel)
-                    group_msgs, current_group_id = [msg], msg.media_group_id
+                    if g_msgs: await send_to_targets(client, g_msgs, channel)
+                    g_msgs, curr_gid = [msg], msg.media_group_id
             else:
-                if group_msgs: await send_to_targets(client, group_msgs, channel)
-                group_msgs, current_group_id = [], None
+                if g_msgs: await send_to_targets(client, g_msgs, channel)
+                g_msgs, curr_gid = [], None
                 await send_to_targets(client, [msg], channel)
-        if group_msgs: await send_to_targets(client, group_msgs, channel)
+        if g_msgs: await send_to_targets(client, g_msgs, channel)
     print("✅ تم الانتهاء.")
 
 # ==========================================
 # 4. تشغيل البوت
 # ==========================================
-app = Client("retail_v3", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
+app = Client("retail_v6", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
 
 @app.on_message(filters.chat(SOURCE_CHANNELS) & ~filters.forwarded)
 async def main_handler(client, message):
@@ -162,7 +175,7 @@ async def main_handler(client, message):
 
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Retail Pro Bot v3.0 Running!"
+def home(): return "Retail Pro Bot v5.2 Active!"
 
 async def start_bot():
     await app.start()
