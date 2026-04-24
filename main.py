@@ -1,9 +1,6 @@
 import os
 import re
 import asyncio
-import pytesseract
-from PIL import Image
-from io import BytesIO
 from datetime import datetime, timezone
 from pyrogram import Client, filters, idle
 from pyrogram.errors import FloodWait
@@ -67,49 +64,32 @@ def normalize_numbers(text):
     if not text: return ""
     return text.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
 
-async def should_skip_photo(client, photo):
-    """فحص الصورة للكشف عن سكرين شوت أو أسعار مكتوبة"""
+def is_screenshot(photo):
     if not photo: return False
-    
-    # 1. فحص أبعاد السكرين شوت
     ratio = photo.height / photo.width
-    if ratio > 1.8: return True
-    
-    # 2. فحص النص داخل الصورة (OCR)
-    try:
-        file_path = await client.download_media(photo)
-        # استخدام Tesseract لقراءة الأرقام من الصورة
-        text_in_image = pytesseract.image_to_string(Image.open(file_path))
-        os.remove(file_path) # حذف الملف بعد الفحص
-        
-        # البحث عن أرقام الجملة المكتوبة يدوياً (مثل 120، 180)
-        nums_in_image = re.findall(r'(\d+)', text_in_image)
-        for n in nums_in_image:
-            if 50 <= int(n) <= 500: # المدى الشائع لأسعار الجملة المكتوبة على الصور
-                return True
-    except: pass
-    return False
+    return ratio > 1.8
 
 def extract_real_price(text):
     if not text: return None
     norm_text = normalize_numbers(text)
     
-    # تنظيف الجملة لاستبعاد أرقام الكميات
-    clean_text = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر|شكل|لون|قطعة|ق|قطع)', '', norm_text, flags=re.IGNORECASE)
+    # 1. حذف أسطر الجملة الصريحة أولاً لكي لا يراها البوت (مثل: من اول 3 قطع)
+    clean_for_search = re.sub(r'.*(?:سعر الدسته|سعر الدستة|جمله|جملة|من اول \d+ قطع).*', '', norm_text)
     
-    # حذف أسطر الجملة الصريحة
-    clean_text = re.sub(r'.*(?:سعر الدسته|سعر الدستة|جمله|جملة|من اول \d+ قطع).*', '', clean_text)
-    
-    # الحالة الخاصة: وجود "بدل" أو "عرض" نأخذ الأقل
+    # تنظيف النص من أرقام المقاسات والكميات لعدم الخلط
+    clean_for_search = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر|شكل|لون|ق)', '', clean_for_search, flags=re.IGNORECASE)
+
+    # 2. القاعدة الأولى: لو فيه كلمات "عرض" أو "بدل" أو "بكام" -> نأخذ السعر الأصغر (قاعدة العرض)
     if any(kw in norm_text for kw in ["بدل", "بكام", "بس", "عرض"]):
-        nums = [int(n) for n in re.findall(r'(\d+)', clean_text) if 15 <= int(n) <= 2000]
+        nums = [int(n) for n in re.findall(r'(\d+)', clean_for_search) if 15 <= int(n) <= 2000]
         if nums: return min(nums)
 
-    # الحالة العامة: البحث عن كلمة "قطعة" أو السعر الأخير
-    price_match = re.search(r'(?:من اول قطعه|قطعه|قطعة|بسعر|سعر|price)\s*[:：]?\s*(\d+)', clean_text, re.IGNORECASE)
+    # 3. القاعدة الثانية: البحث عن السعر المرتبط بكلمة "قطعه" أو "قطعة" أو "بسعر"
+    price_match = re.search(r'(?:من اول قطعه|قطعه|قطعة|بسعر|سعر|price)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match: return int(price_match.group(1))
     
-    nums = [int(n) for n in re.findall(r'(\d+)', clean_text) if 15 <= int(n) <= 2000]
+    # 4. القاعدة الثالثة: لو ملقاش كلمات دلالية، نأخذ آخر رقم في النص (لأنه غالباً السعر في المكاتب)
+    nums = [int(n) for n in re.findall(r'(\d+)', clean_for_search) if 15 <= int(n) <= 2000]
     return nums[-1] if nums else None
 
 def build_text(original_text, source_id, msg_date):
@@ -124,18 +104,28 @@ def build_text(original_text, source_id, msg_date):
     price_str_ar = convert_to_arabic_numbers(final_price_val)
     
     processed_text = normalize_numbers(original_text)
+    piece_type_name = ""
+    if prefix == "P":
+        type_match = re.search(r'([A-Z]+)\d+', processed_text, re.IGNORECASE)
+        if type_match: piece_type_name = P_CHANNEL_TYPES.get(type_match.group(1).upper(), "")
+
     patterns = [
-        r'^[A-Z]+\d+.*', r'.*(?:اونلاين|online).*', 
+        r'^[A-Z]+\d+.*', 
+        r'.*(?:اونلاين|online).*', 
         r'.*(?:سعر القطعه|price|بسعر|جمله|جملة).*', 
         r'.*(?:بدل|بكام|عرض خاص|عرض|بس).*', 
         r'.*(?:الكود|السعر).*[:：].*', 
-        r'.*(?:سعر الدسته|سعر الدستة|من اول \d+ قطع).*', 
+        r'.*(?:سعر الدسته|سعر الدستة|من اول \d+ قطع).*', # حذف السطر الخاص بالجملة تماماً
         r'^[\W\s]*\d+[\W\s]*$'
     ]
     
     clean_lines = [l.strip() for l in processed_text.split('\n') if not any(re.search(p, l, re.IGNORECASE) for p in patterns) and l.strip()]
     description = "\n".join(clean_lines)
 
+    if prefix == "P":
+        if description: return f"{description}\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str_ar} ج 🔥"
+        elif piece_type_name: return f"{piece_type_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨️\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str_ar} ج 🔥"
+    
     return f"{description}\n\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_str_ar} ج 🔥"
 
 # ==========================================
@@ -144,13 +134,7 @@ def build_text(original_text, source_id, msg_date):
 media_groups = {}
 async def safe_send(client, messages, source_id):
     if not messages: return
-    
-    valid_messages = []
-    for m in messages:
-        if m.photo:
-            if await should_skip_photo(client, m.photo): continue
-        valid_messages.append(m)
-        
+    valid_messages = [m for m in messages if not (m.photo and is_screenshot(m.photo))]
     if not valid_messages: return
     
     main_msg = next((m for m in valid_messages if (m.caption or m.text)), valid_messages[0])
