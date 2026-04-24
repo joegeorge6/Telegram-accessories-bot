@@ -94,6 +94,7 @@ def build_text(original_text, source_id, msg_date):
     
     processed_text = normalize_numbers(original_text)
     
+    # التعديل الجوهري: قص كلمة السعر وما بعدها من السطر
     cleaned_lines = []
     for line in processed_text.split('\n'):
         line = line.strip()
@@ -101,31 +102,96 @@ def build_text(original_text, source_id, msg_date):
         
         # 1. حذف السطر بالكامل لو إعلان أو جملة صريحة
         patterns_to_delete = [
-            r'^[A-Z]+\d+.*', 
-            r'.*(?:اونلاين|online).*', 
-            r'.*(?:جمله|جملة).*', 
-            r'.*(?:سعر الدسته|سعر الدستة|من اول \d+ قطع).*', 
-            r'^[\W\s]*\d+[\W\s]*$'
+            r'^[A-Z]+\d+.*', r'.*(?:اونلاين|online).*', r'.*(?:جمله|جملة).*', 
+            r'.*(?:سعر الدسته|سعر الدستة|من اول \d+ قطع).*', r'^[\W\s]*\d+[\W\s]*$'
         ]
         if any(re.search(p, line, re.IGNORECASE) for p in patterns_to_delete):
             continue
-        
-        # 2. ✅ الحل الجديد: قص كلمة السعر وأي أرقام/إيموجي/رموز بعدها لآخر السطر
-        line = re.sub(
-            r'\s*(?:السعر|سعر|price|بسعر|قطعه|قطعة)[\s:：]*\d*\s*(?:ج|جنيه|le|egp)?[\s\S]*$',
-            '',
-            line,
-            flags=re.IGNORECASE
-        ).strip()
-        
-        # 3. ✅ backup: لو لسه فيه رقم سعر + "ج" في نهاية السطر من غير كلمة "سعر"
-        line = re.sub(r'\s*\d{2,4}\s*(?:ج|جنيه|le|egp)[\s\S]*$', '', line, flags=re.IGNORECASE).strip()
-        
-        # 4. تنظيف الإيموجي والرموز المعلقة في الآخر
-        line = re.sub(r'[\s🌚🔥💰🔖✨⭐️🌟💎🎀🌹❤️♥️]+$', '', line).strip()
+            
+        # 2. قص كلمة "السعر" أو "سعر" أو "Price" وما يتبعها من السطر (للحفاظ على الوصف)
+        # هذا النمط يبحث عن الكلمة ويحذفها هي وكل شيء بعدها في نفس السطر
+        line = re.sub(r'(?:السعر|سعر|price|بسعر|قطعه|قطعة).*', '', line, flags=re.IGNORECASE).strip()
         
         if line: cleaned_lines.append(line)
 
     description = "\n".join(cleaned_lines)
-    
-    # لو مفيش وصف ومفيش سعر، ما نبعتش حاجة
+    return f"{description}\n\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_str_ar} ج 🔥"
+
+# ==========================================
+# 3. نظام النشر
+# ==========================================
+media_groups = {}
+async def safe_send(client, messages, source_id):
+    if not messages: return
+    valid_messages = [m for m in messages if not (m.photo and is_screenshot(m.photo))]
+    if not valid_messages: return
+    main_msg = next((m for m in valid_messages if (m.caption or m.text)), valid_messages[0])
+    msg_date = main_msg.date.replace(tzinfo=timezone.utc)
+    retail_text = build_text(main_msg.caption or main_msg.text, source_id, msg_date)
+    if retail_text is None: return
+    try:
+        for m in valid_messages:
+            try:
+                if m.photo: await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
+                elif m.video: await client.send_video(RETAIL_CHANNEL, m.video.file_id)
+                elif m.animation: await client.send_animation(RETAIL_CHANNEL, m.animation.file_id)
+            except FloodWait as e: await asyncio.sleep(e.value)
+            await asyncio.sleep(3) 
+        if retail_text != "": await client.send_message(RETAIL_CHANNEL, retail_text)
+        await asyncio.sleep(4)
+    except: pass
+
+async def fetch_history(client):
+    print(f"🔎 سحب الشغل من {START_DATE}...")
+    current_limit = get_current_end_date()
+    for channel in SOURCE_CHANNELS:
+        all_messages = []
+        async for msg in client.get_chat_history(channel):
+            m_date = msg.date.replace(tzinfo=timezone.utc)
+            if m_date < START_DATE: break
+            if m_date > current_limit: continue
+            all_messages.append(msg)
+        all_messages.reverse()
+        curr_gid, g_msgs = None, []
+        for msg in all_messages:
+            if msg.media_group_id:
+                if msg.media_group_id == curr_gid: g_msgs.append(msg)
+                else:
+                    if g_msgs: await safe_send(client, g_msgs, channel)
+                    g_msgs, curr_gid = [msg], msg.media_group_id
+            else:
+                if g_msgs: await safe_send(client, g_msgs, channel)
+                g_msgs, curr_gid = [], None
+                await safe_send(client, [msg], channel)
+        if g_msgs: await safe_send(client, g_msgs, channel)
+
+# ==========================================
+# 4. تشغيل البوت
+# ==========================================
+app = Client("retail_v21", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
+
+@app.on_message(filters.chat(SOURCE_CHANNELS))
+async def main_handler(client, message):
+    if message.date.replace(tzinfo=timezone.utc) < START_DATE: return
+    if message.media_group_id:
+        gid = message.media_group_id
+        if gid not in media_groups:
+            media_groups[gid] = [message]
+            await asyncio.sleep(15) 
+            await safe_send(client, media_groups[gid], message.chat.id)
+            if gid in media_groups: del media_groups[gid]
+        else: media_groups[gid].append(message)
+    else: await safe_send(client, [message], message.chat.id)
+
+web_app = Flask(__name__)
+@web_app.route('/')
+def home(): return "Retail Pro Bot v21.0 Active!"
+
+async def start_bot():
+    await app.start()
+    asyncio.create_task(fetch_history(app))
+    await idle()
+
+if __name__ == "__main__":
+    Thread(target=lambda: web_app.run(host="0.0.0.0", port=8000)).start()
+    app.run(start_bot())
