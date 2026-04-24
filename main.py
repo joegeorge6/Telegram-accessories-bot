@@ -49,14 +49,11 @@ P_CHANNEL_TYPES = {"A": "انسيال", "K": "خلخال", "N": "سلسلة", "C
 AD_KEYWORDS = ["شركه PR", "شركة PR", "النزهه الجديده", "رقم الحجز", "pribore", "بيجامتك", "01012050836"]
 REVIEW_KEYWORDS = ["ريفيو", "ريفيوهات", "آراء", "اراء", "رأي", "راي", "وصلنا", "تجربة", "تسلم", "شكرا"]
 
-# عداد القنوات بيتم تخزينه في قاموس عشان كل قناة يكون لها عداد منفصل ومستقل
 channel_counters = {}
 
 def generate_my_code(source_channel_id, msg_date):
     global channel_counters
     today_str = msg_date.strftime("%d%m")
-    
-    # مفتاح فريد لكل قناة في كل يوم
     counter_key = f"{source_channel_id}_{today_str}"
     
     if counter_key not in channel_counters:
@@ -65,7 +62,6 @@ def generate_my_code(source_channel_id, msg_date):
         channel_counters[counter_key] += 1
         
     prefix = SUPPLIER_PREFIX_MAP.get(source_channel_id, "UN")
-    # العداد بياخد رقمين (01, 02...) وبعده اليوم والشهر كما طلبت
     return f"{prefix}{channel_counters[counter_key]:02d}{today_str}"
 
 def normalize_numbers(text):
@@ -75,16 +71,21 @@ def normalize_numbers(text):
 def extract_real_price(text):
     if not text: return None
     norm_text = normalize_numbers(text)
-    clean_text = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر)', '', norm_text, flags=re.IGNORECASE)
-    clean_text = re.sub(r'.*(?:سعر الدسته|سعر الدستة|سعر الجمله|سعر الجملة).*', '', clean_text)
     
-    price_match = re.search(r'price\s*(\d+)', clean_text, re.IGNORECASE)
-    if price_match: return int(price_match.group(1))
+    # تنظيف النص من أرقام المقاسات والكميات والأشكال
+    clean_text = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر|شكل|لون|قطعة|ق)', '', norm_text, flags=re.IGNORECASE)
+    clean_text = re.sub(r'.*(?:سعر الدسته|سعر الدستة|جمله|جملة).*', '', clean_text)
     
-    nums = [int(n) for n in re.findall(r'(\d+)', clean_text) if 10 <= int(n) <= 2000]
+    # الأولوية للرقم الذي يأتي بعد كلمة سعر أو بسعر
+    price_pattern = re.search(r'(?:بسعر|سعر|price)\s*[:：]?\s*(\d+)', clean_text, re.IGNORECASE)
+    if price_pattern:
+        return int(price_pattern.group(1))
+    
+    # لو ملقاش، يبحث عن الأرقام المنطقية ويأخذ آخر رقم (لأنه غالباً بيكون السعر)
+    nums = [int(n) for n in re.findall(r'(\d+)', clean_text) if 15 <= int(n) <= 2000]
     if any(kw in norm_text for kw in ["بدل", "بكام", "بس", "عرض"]):
         if nums: return min(nums)
-    return nums[-1] if nums else (nums[0] if nums else None)
+    return nums[-1] if nums else None
 
 def build_text(original_text, source_id, msg_date):
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "")
@@ -92,7 +93,6 @@ def build_text(original_text, source_id, msg_date):
     if original_text and any(word in original_text for word in REVIEW_KEYWORDS): return None
     if not original_text or original_text.strip() == "": return ""
     
-    # استدعاء الكود بنفس النظام اللي بتحبه
     my_code = generate_my_code(source_id, msg_date)
     found_price_val = extract_real_price(original_text)
     final_price_val = RETAIL_MAPPING.get(found_price_val, "")
