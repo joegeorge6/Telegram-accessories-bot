@@ -68,20 +68,30 @@ def normalize_numbers(text):
     if not text: return ""
     return text.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
 
+def is_screenshot(photo):
+    """دالة لفحص أبعاد الصورة للكشف عن السكرين شوت"""
+    if not photo: return False
+    width = photo.width
+    height = photo.height
+    # سكرين شوت الموبايل غالباً يكون طوله أكبر من عرضه بمرتين على الأقل
+    # نسبة الطول للعرض في السكرين شوت عادة 2:1 أو أكثر
+    ratio = height / width
+    if ratio > 1.8: # إذا كان الطول أكبر من العرض بـ 1.8 مرة، غالباً سكرين شوت موبايل
+        return True
+    return False
+
 def extract_real_price(text):
     if not text: return None
     norm_text = normalize_numbers(text)
     
-    # تنظيف النص من أرقام المقاسات والكميات والأشكال
+    # تنظيف النص لضمان دقة استخراج السعر
     clean_text = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر|شكل|لون|قطعة|ق)', '', norm_text, flags=re.IGNORECASE)
     clean_text = re.sub(r'.*(?:سعر الدسته|سعر الدستة|جمله|جملة).*', '', clean_text)
     
-    # الأولوية للرقم الذي يأتي بعد كلمة سعر أو بسعر
     price_pattern = re.search(r'(?:بسعر|سعر|price)\s*[:：]?\s*(\d+)', clean_text, re.IGNORECASE)
     if price_pattern:
         return int(price_pattern.group(1))
     
-    # لو ملقاش، يبحث عن الأرقام المنطقية ويأخذ آخر رقم (لأنه غالباً بيكون السعر)
     nums = [int(n) for n in re.findall(r'(\d+)', clean_text) if 15 <= int(n) <= 2000]
     if any(kw in norm_text for kw in ["بدل", "بكام", "بس", "عرض"]):
         if nums: return min(nums)
@@ -119,13 +129,25 @@ def build_text(original_text, source_id, msg_date):
 media_groups = {}
 async def safe_send(client, messages, source_id):
     if not messages: return
-    main_msg = next((m for m in messages if (m.caption or m.text)), messages[0])
+    
+    # فلترة الصور للتأكد أنها ليست سكرين شوت
+    valid_messages = []
+    for m in messages:
+        if m.photo:
+            if is_screenshot(m.photo):
+                print(f"🚫 تم تخطي صورة (ScreenShot) في القناة {source_id}")
+                continue
+        valid_messages.append(m)
+        
+    if not valid_messages: return
+    
+    main_msg = next((m for m in valid_messages if (m.caption or m.text)), valid_messages[0])
     msg_date = main_msg.date.replace(tzinfo=timezone.utc)
     retail_text = build_text(main_msg.caption or main_msg.text, source_id, msg_date)
     if retail_text is None: return
     
     try:
-        for m in messages:
+        for m in valid_messages:
             try:
                 if m.photo: await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
                 elif m.video: await client.send_video(RETAIL_CHANNEL, m.video.file_id)
