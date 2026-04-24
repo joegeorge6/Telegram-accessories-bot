@@ -73,22 +73,20 @@ def extract_real_price(text):
     if not text: return None
     norm_text = normalize_numbers(text)
     
-    # 1. حذف أسطر الجملة الصريحة أولاً لكي لا يراها البوت (مثل: من اول 3 قطع)
+    # تنظيف النص من المقاسات والكميات
     clean_for_search = re.sub(r'.*(?:سعر الدسته|سعر الدستة|جمله|جملة|من اول \d+ قطع).*', '', norm_text)
-    
-    # تنظيف النص من أرقام المقاسات والكميات لعدم الخلط
     clean_for_search = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر|شكل|لون|ق)', '', clean_for_search, flags=re.IGNORECASE)
 
-    # 2. القاعدة الأولى: لو فيه كلمات "عرض" أو "بدل" أو "بكام" -> نأخذ السعر الأصغر (قاعدة العرض)
+    # 1. حالة العرض: لو فيه كلمات "عرض" أو "بدل" -> نأخذ السعر الأصغر
     if any(kw in norm_text for kw in ["بدل", "بكام", "بس", "عرض"]):
         nums = [int(n) for n in re.findall(r'(\d+)', clean_for_search) if 15 <= int(n) <= 2000]
         if nums: return min(nums)
 
-    # 3. القاعدة الثانية: البحث عن السعر المرتبط بكلمة "قطعه" أو "قطعة" أو "بسعر"
-    price_match = re.search(r'(?:من اول قطعه|قطعه|قطعة|بسعر|سعر|price)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
+    # 2. البحث عن سعر القطعة بالكلمات الدلالية (تم تحسين النمط ليشمل "السعر" و "سعر")
+    price_match = re.search(r'(?:من اول قطعه|قطعه|قطعة|بسعر|السعر|سعر|price)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match: return int(price_match.group(1))
     
-    # 4. القاعدة الثالثة: لو ملقاش كلمات دلالية، نأخذ آخر رقم في النص (لأنه غالباً السعر في المكاتب)
+    # 3. نأخذ آخر رقم متاح
     nums = [int(n) for n in re.findall(r'(\d+)', clean_for_search) if 15 <= int(n) <= 2000]
     return nums[-1] if nums else None
 
@@ -104,28 +102,21 @@ def build_text(original_text, source_id, msg_date):
     price_str_ar = convert_to_arabic_numbers(final_price_val)
     
     processed_text = normalize_numbers(original_text)
-    piece_type_name = ""
-    if prefix == "P":
-        type_match = re.search(r'([A-Z]+)\d+', processed_text, re.IGNORECASE)
-        if type_match: piece_type_name = P_CHANNEL_TYPES.get(type_match.group(1).upper(), "")
-
+    
+    # التعديل هنا: إضافة أنماط أقوى لحذف سطور السعر القديمة من نص البوست
     patterns = [
         r'^[A-Z]+\d+.*', 
         r'.*(?:اونلاين|online).*', 
-        r'.*(?:سعر القطعه|price|بسعر|جمله|جملة).*', 
+        r'.*(?:السعر|سعر|price|بسعر)\s*[:：]?\s*\d+.*', # حذف أي سطر يحتوي على كلمة سعر متبوعة برقم
+        r'.*(?:جمله|جملة).*', 
         r'.*(?:بدل|بكام|عرض خاص|عرض|بس).*', 
-        r'.*(?:الكود|السعر).*[:：].*', 
-        r'.*(?:سعر الدسته|سعر الدستة|من اول \d+ قطع).*', # حذف السطر الخاص بالجملة تماماً
+        r'.*(?:سعر الدسته|سعر الدستة|من اول \d+ قطع).*',
         r'^[\W\s]*\d+[\W\s]*$'
     ]
     
     clean_lines = [l.strip() for l in processed_text.split('\n') if not any(re.search(p, l, re.IGNORECASE) for p in patterns) and l.strip()]
     description = "\n".join(clean_lines)
 
-    if prefix == "P":
-        if description: return f"{description}\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str_ar} ج 🔥"
-        elif piece_type_name: return f"{piece_type_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨️\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str_ar} ج 🔥"
-    
     return f"{description}\n\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_str_ar} ج 🔥"
 
 # ==========================================
