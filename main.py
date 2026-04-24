@@ -29,7 +29,6 @@ def parse_date(date_str, default_date):
         except: continue
     return default_date
 
-# التعديل الحاسم: لو التاريخ فارغ، ابدأ من 'الآن' (اللحظة الحالية بالثانية) لمنع أي تكرار
 START_DATE = parse_date(os.environ.get("START_DATE", ""), datetime.now(timezone.utc))
 
 def get_current_end_date():
@@ -68,12 +67,21 @@ def normalize_numbers(text):
 def extract_real_price(text):
     if not text: return None
     norm_text = normalize_numbers(text)
+    # تنظيف النص من أرقام المقاسات لضمان عدم استخراجها كسعر
     clean_text = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر)', '', norm_text, flags=re.IGNORECASE)
+    
+    # البحث عن نمط "سعر الدسته" لإزالته تماماً قبل البحث عن السعر
+    clean_text = re.sub(r'.*(?:سعر الدسته|سعر الدستة|سعر الجمله|سعر الجملة).*', '', clean_text)
+    
     price_match = re.search(r'price\s*(\d+)', clean_text, re.IGNORECASE)
     if price_match: return int(price_match.group(1))
+    
+    # استخراج كافة الأرقام المنطقية لأسعار القطع (بين 10 و 2000)
     nums = [int(n) for n in re.findall(r'(\d+)', clean_text) if 10 <= int(n) <= 2000]
+    
     if any(kw in norm_text for kw in ["بدل", "بكام", "بس", "عرض"]):
         if nums: return min(nums)
+        
     return nums[-1] if nums else (nums[0] if nums else None)
 
 def build_text(original_text, source_id, msg_date):
@@ -93,13 +101,24 @@ def build_text(original_text, source_id, msg_date):
         type_match = re.search(r'([A-Z]+)\d+', processed_text, re.IGNORECASE)
         if type_match: piece_type_name = P_CHANNEL_TYPES.get(type_match.group(1).upper(), "")
 
-    patterns = [r'^[A-Z]+\d+.*', r'.*(?:اونلاين|online).*', r'.*(?:سعر القطعه|price|بسعر|جمله|جملة).*', r'.*(?:بدل|بكام|عرض خاص|عرض|بس).*', r'.*(?:الكود|السعر).*[:：].*', r'^[\W\s]*\d+[\W\s]*$']
+    # الأنماط المطلوب تجاهلها من النص الأصلي (تمت إضافة سعر الدسته والجملة)
+    patterns = [
+        r'^[A-Z]+\d+.*', 
+        r'.*(?:اونلاين|online).*', 
+        r'.*(?:سعر القطعه|price|بسعر|جمله|جملة).*', 
+        r'.*(?:بدل|بكام|عرض خاص|عرض|بس).*', 
+        r'.*(?:الكود|السعر).*[:：].*', 
+        r'.*(?:سعر الدسته|سعر الدستة).*', # تجاهل أسطر سعر الدسته
+        r'^[\W\s]*\d+[\W\s]*$'
+    ]
+    
     clean_lines = [l.strip() for l in processed_text.split('\n') if not any(re.search(p, l, re.IGNORECASE) for p in patterns) and l.strip()]
     description = "\n".join(clean_lines)
 
     if prefix == "P":
         if description: return f"{description}\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str_ar} ج 🔥"
         elif piece_type_name: return f"{piece_type_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨️\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str_ar} ج 🔥"
+    
     return f"{description}\n\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_str_ar} ج 🔥"
 
 # ==========================================
@@ -162,7 +181,7 @@ async def main_handler(client, message):
         gid = message.media_group_id
         if gid not in media_groups:
             media_groups[gid] = [message]
-            await asyncio.sleep(15) # زيادة وقت الانتظار للألبومات لضمان التجميع
+            await asyncio.sleep(15) 
             await safe_send(client, media_groups[gid], message.chat.id)
             if gid in media_groups: del media_groups[gid]
         else: media_groups[gid].append(message)
