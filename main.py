@@ -78,6 +78,11 @@ def extract_real_price(text):
         if nums: return min(nums)
     price_match = re.search(r'(?:من اول قطعه|قطعه|قطعة|بسعر|السعر|سعر|price)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match: return int(price_match.group(1))
+    
+    # تحسين جديد: البحث عن رقم يليه حرف "ج" أو رقم في نهاية السطر متبوع بإيموجي
+    regex_price = re.search(r'(\d+)\s*(?:ج|LE|L.E)', clean_for_search, re.IGNORECASE)
+    if regex_price: return int(regex_price.group(1))
+
     nums = [int(n) for n in re.findall(r'(\d+)', clean_for_search) if 15 <= int(n) <= 2000]
     return nums[-1] if nums else None
 
@@ -94,13 +99,12 @@ def build_text(original_text, source_id, msg_date):
     
     processed_text = normalize_numbers(original_text)
     
-    # التعديل الجوهري: قص كلمة السعر وما بعدها من السطر
     cleaned_lines = []
     for line in processed_text.split('\n'):
         line = line.strip()
         if not line: continue
         
-        # 1. حذف السطر بالكامل لو إعلان أو جملة صريحة
+        # 1. حذف السطر بالكامل لو إعلان أو جملة
         patterns_to_delete = [
             r'^[A-Z]+\d+.*', r'.*(?:اونلاين|online).*', r'.*(?:جمله|جملة).*', 
             r'.*(?:سعر الدسته|سعر الدستة|من اول \d+ قطع).*', r'^[\W\s]*\d+[\W\s]*$'
@@ -108,10 +112,17 @@ def build_text(original_text, source_id, msg_date):
         if any(re.search(p, line, re.IGNORECASE) for p in patterns_to_delete):
             continue
             
-        # 2. قص كلمة "السعر" أو "سعر" أو "Price" وما يتبعها من السطر (للحفاظ على الوصف)
-        # هذا النمط يبحث عن الكلمة ويحذفها هي وكل شيء بعدها في نفس السطر
-        line = re.sub(r'(?:السعر|سعر|price|بسعر|قطعه|قطعة).*', '', line, flags=re.IGNORECASE).strip()
+        # 2. التعديل المتقدم: قص السعر القديم من داخل السطر
+        # أ) يبحث عن "السعر" أو "سعر" وما بعدها
+        line = re.sub(r'(?:السعر|سعر|price|بسعر).*', '', line, flags=re.IGNORECASE).strip()
         
+        # ب) يبحث عن نمط "رقم + ج" في نهاية السطر (مثل 120ج) ويحذفه
+        line = re.sub(r'\d+\s*(?:ج|LE|L.E).*', '', line, flags=re.IGNORECASE).strip()
+        
+        # ج) لو السطر عبارة عن رقم فقط متبوع بإيموجي (مثل: 120ج ❤️🔥)
+        if re.match(r'^\d+\s*[\w\s]*$', line):
+            continue
+
         if line: cleaned_lines.append(line)
 
     description = "\n".join(cleaned_lines)
