@@ -49,16 +49,24 @@ P_CHANNEL_TYPES = {"A": "انسيال", "K": "خلخال", "N": "سلسلة", "C
 AD_KEYWORDS = ["شركه PR", "شركة PR", "النزهه الجديده", "رقم الحجز", "pribore", "بيجامتك", "01012050836"]
 REVIEW_KEYWORDS = ["ريفيو", "ريفيوهات", "آراء", "اراء", "رأي", "راي", "وصلنا", "تجربة", "تسلم", "شكرا"]
 
-last_saved_date = None
-daily_post_counter = 0
+# عداد القنوات بيتم تخزينه في قاموس عشان كل قناة يكون لها عداد منفصل ومستقل
+channel_counters = {}
 
 def generate_my_code(source_channel_id, msg_date):
-    global last_saved_date, daily_post_counter
+    global channel_counters
     today_str = msg_date.strftime("%d%m")
-    if last_saved_date != today_str: last_saved_date, daily_post_counter = today_str, 1
-    else: daily_post_counter += 1
+    
+    # مفتاح فريد لكل قناة في كل يوم
+    counter_key = f"{source_channel_id}_{today_str}"
+    
+    if counter_key not in channel_counters:
+        channel_counters[counter_key] = 1
+    else:
+        channel_counters[counter_key] += 1
+        
     prefix = SUPPLIER_PREFIX_MAP.get(source_channel_id, "UN")
-    return f"{prefix}{daily_post_counter:02d}{today_str}"
+    # العداد بياخد رقمين (01, 02...) وبعده اليوم والشهر كما طلبت
+    return f"{prefix}{channel_counters[counter_key]:02d}{today_str}"
 
 def normalize_numbers(text):
     if not text: return ""
@@ -67,21 +75,15 @@ def normalize_numbers(text):
 def extract_real_price(text):
     if not text: return None
     norm_text = normalize_numbers(text)
-    # تنظيف النص من أرقام المقاسات لضمان عدم استخراجها كسعر
     clean_text = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر)', '', norm_text, flags=re.IGNORECASE)
-    
-    # البحث عن نمط "سعر الدسته" لإزالته تماماً قبل البحث عن السعر
     clean_text = re.sub(r'.*(?:سعر الدسته|سعر الدستة|سعر الجمله|سعر الجملة).*', '', clean_text)
     
     price_match = re.search(r'price\s*(\d+)', clean_text, re.IGNORECASE)
     if price_match: return int(price_match.group(1))
     
-    # استخراج كافة الأرقام المنطقية لأسعار القطع (بين 10 و 2000)
     nums = [int(n) for n in re.findall(r'(\d+)', clean_text) if 10 <= int(n) <= 2000]
-    
     if any(kw in norm_text for kw in ["بدل", "بكام", "بس", "عرض"]):
         if nums: return min(nums)
-        
     return nums[-1] if nums else (nums[0] if nums else None)
 
 def build_text(original_text, source_id, msg_date):
@@ -90,6 +92,7 @@ def build_text(original_text, source_id, msg_date):
     if original_text and any(word in original_text for word in REVIEW_KEYWORDS): return None
     if not original_text or original_text.strip() == "": return ""
     
+    # استدعاء الكود بنفس النظام اللي بتحبه
     my_code = generate_my_code(source_id, msg_date)
     found_price_val = extract_real_price(original_text)
     final_price_val = RETAIL_MAPPING.get(found_price_val, "")
@@ -101,24 +104,13 @@ def build_text(original_text, source_id, msg_date):
         type_match = re.search(r'([A-Z]+)\d+', processed_text, re.IGNORECASE)
         if type_match: piece_type_name = P_CHANNEL_TYPES.get(type_match.group(1).upper(), "")
 
-    # الأنماط المطلوب تجاهلها من النص الأصلي (تمت إضافة سعر الدسته والجملة)
-    patterns = [
-        r'^[A-Z]+\d+.*', 
-        r'.*(?:اونلاين|online).*', 
-        r'.*(?:سعر القطعه|price|بسعر|جمله|جملة).*', 
-        r'.*(?:بدل|بكام|عرض خاص|عرض|بس).*', 
-        r'.*(?:الكود|السعر).*[:：].*', 
-        r'.*(?:سعر الدسته|سعر الدستة).*', # تجاهل أسطر سعر الدسته
-        r'^[\W\s]*\d+[\W\s]*$'
-    ]
-    
+    patterns = [r'^[A-Z]+\d+.*', r'.*(?:اونلاين|online).*', r'.*(?:سعر القطعه|price|بسعر|جمله|جملة).*', r'.*(?:بدل|بكام|عرض خاص|عرض|بس).*', r'.*(?:الكود|السعر).*[:：].*', r'.*(?:سعر الدسته|سعر الدستة).*', r'^[\W\s]*\d+[\W\s]*$']
     clean_lines = [l.strip() for l in processed_text.split('\n') if not any(re.search(p, l, re.IGNORECASE) for p in patterns) and l.strip()]
     description = "\n".join(clean_lines)
 
     if prefix == "P":
         if description: return f"{description}\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str_ar} ج 🔥"
         elif piece_type_name: return f"{piece_type_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨️\n\nالكود : 🔖 {my_code}\nبسعر : 💰 {price_str_ar} ج 🔥"
-    
     return f"{description}\n\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_str_ar} ج 🔥"
 
 # ==========================================
