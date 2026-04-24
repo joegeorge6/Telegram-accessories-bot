@@ -45,7 +45,6 @@ RETAIL_MAPPING = { 15: 45, 20: 50, 25: 55, 30: 60, 35: 65, 40: 70, 45: 75, 50: 8
 # 2. الدوال المساعدة
 # ==========================================
 SUPPLIER_PREFIX_MAP = {"aymanelawamy123": "A", "sasaaccessories": "S", "ayselstore55": "AS", "miyokowatches22": "M", -1001132261086: "P", -1001448553593: "I", -1001682055192: "H"}
-P_CHANNEL_TYPES = {"A": "انسيال", "K": "خلخال", "N": "سلسلة", "CP": "كوليه", "C": "كوليه", "E": "حلق", "R": "خاتم", "B": "اسورة"}
 AD_KEYWORDS = ["شركه PR", "شركة PR", "النزهه الجديده", "رقم الحجز", "pribore", "بيجامتك", "01012050836"]
 REVIEW_KEYWORDS = ["ريفيو", "ريفيوهات", "آراء", "اراء", "رأي", "راي", "وصلنا", "تجربة", "تسلم", "شكرا"]
 
@@ -72,21 +71,13 @@ def is_screenshot(photo):
 def extract_real_price(text):
     if not text: return None
     norm_text = normalize_numbers(text)
-    
-    # تنظيف النص من المقاسات والكميات
     clean_for_search = re.sub(r'.*(?:سعر الدسته|سعر الدستة|جمله|جملة|من اول \d+ قطع).*', '', norm_text)
     clean_for_search = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر|شكل|لون|ق)', '', clean_for_search, flags=re.IGNORECASE)
-
-    # 1. حالة العرض: لو فيه كلمات "عرض" أو "بدل" -> نأخذ السعر الأصغر
     if any(kw in norm_text for kw in ["بدل", "بكام", "بس", "عرض"]):
         nums = [int(n) for n in re.findall(r'(\d+)', clean_for_search) if 15 <= int(n) <= 2000]
         if nums: return min(nums)
-
-    # 2. البحث عن سعر القطعة بالكلمات الدلالية (تم تحسين النمط ليشمل "السعر" و "سعر")
     price_match = re.search(r'(?:من اول قطعه|قطعه|قطعة|بسعر|السعر|سعر|price)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match: return int(price_match.group(1))
-    
-    # 3. نأخذ آخر رقم متاح
     nums = [int(n) for n in re.findall(r'(\d+)', clean_for_search) if 15 <= int(n) <= 2000]
     return nums[-1] if nums else None
 
@@ -103,20 +94,27 @@ def build_text(original_text, source_id, msg_date):
     
     processed_text = normalize_numbers(original_text)
     
-    # التعديل هنا: إضافة أنماط أقوى لحذف سطور السعر القديمة من نص البوست
-    patterns = [
-        r'^[A-Z]+\d+.*', 
-        r'.*(?:اونلاين|online).*', 
-        r'.*(?:السعر|سعر|price|بسعر)\s*[:：]?\s*\d+.*', # حذف أي سطر يحتوي على كلمة سعر متبوعة برقم
-        r'.*(?:جمله|جملة).*', 
-        r'.*(?:بدل|بكام|عرض خاص|عرض|بس).*', 
-        r'.*(?:سعر الدسته|سعر الدستة|من اول \d+ قطع).*',
-        r'^[\W\s]*\d+[\W\s]*$'
-    ]
-    
-    clean_lines = [l.strip() for l in processed_text.split('\n') if not any(re.search(p, l, re.IGNORECASE) for p in patterns) and l.strip()]
-    description = "\n".join(clean_lines)
+    # التعديل الجوهري: قص كلمة السعر وما بعدها من السطر
+    cleaned_lines = []
+    for line in processed_text.split('\n'):
+        line = line.strip()
+        if not line: continue
+        
+        # 1. حذف السطر بالكامل لو إعلان أو جملة صريحة
+        patterns_to_delete = [
+            r'^[A-Z]+\d+.*', r'.*(?:اونلاين|online).*', r'.*(?:جمله|جملة).*', 
+            r'.*(?:سعر الدسته|سعر الدستة|من اول \d+ قطع).*', r'^[\W\s]*\d+[\W\s]*$'
+        ]
+        if any(re.search(p, line, re.IGNORECASE) for p in patterns_to_delete):
+            continue
+            
+        # 2. قص كلمة "السعر" أو "سعر" أو "Price" وما يتبعها من السطر (للحفاظ على الوصف)
+        # هذا النمط يبحث عن الكلمة ويحذفها هي وكل شيء بعدها في نفس السطر
+        line = re.sub(r'(?:السعر|سعر|price|بسعر|قطعه|قطعة).*', '', line, flags=re.IGNORECASE).strip()
+        
+        if line: cleaned_lines.append(line)
 
+    description = "\n".join(cleaned_lines)
     return f"{description}\n\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_str_ar} ج 🔥"
 
 # ==========================================
@@ -127,12 +125,10 @@ async def safe_send(client, messages, source_id):
     if not messages: return
     valid_messages = [m for m in messages if not (m.photo and is_screenshot(m.photo))]
     if not valid_messages: return
-    
     main_msg = next((m for m in valid_messages if (m.caption or m.text)), valid_messages[0])
     msg_date = main_msg.date.replace(tzinfo=timezone.utc)
     retail_text = build_text(main_msg.caption or main_msg.text, source_id, msg_date)
     if retail_text is None: return
-    
     try:
         for m in valid_messages:
             try:
