@@ -17,9 +17,10 @@ SESSION_STRING = os.environ.get("SESSION_STRING", "")
 RETAIL_CHANNEL = "@girlsfashionesta"
 DB_FILE = "processed_msgs.txt"
 
-# تعليق مسح الذاكرة حتى لا يتم إعادة نشر كل الرسائل كل مرة
-# if os.path.exists(DB_FILE):
-#     os.remove(DB_FILE)
+# تنظيف الذاكرة عند كل إعادة تشغيل لضمان جلب الشغل القديم (حسب طلبك السابق)
+if os.path.exists(DB_FILE):
+    print(f"🧹 [System] Cleaning memory file: {DB_FILE}")
+    os.remove(DB_FILE)
 
 def convert_to_arabic_numbers(text):
     if not text: return ""
@@ -46,10 +47,6 @@ def parse_date(date_str, default_date, is_end=False):
 START_DATE = parse_date(os.environ.get("START_DATE", ""), datetime.now(timezone.utc))
 END_DATE_LIMIT = parse_date(os.environ.get("END_DATE", ""), None, is_end=True)
 
-# طباعة التواريخ للتأكيد
-print(f"START_DATE = {START_DATE}")
-print(f"END_DATE_LIMIT = {END_DATE_LIMIT}")
-
 raw_channels = os.environ.get("SOURCE_CHANNELS", "").split()
 SOURCE_CHANNELS = [int(ch) if ch.startswith("-") else ch for ch in raw_channels]
 
@@ -67,7 +64,8 @@ channel_counters = {}
 def is_msg_processed(msg_id):
     if not os.path.exists(DB_FILE): return False
     with open(DB_FILE, "r") as f:
-        return str(msg_id) in f.read().splitlines()
+        content = f.read()
+        return str(msg_id) in content.splitlines()
 
 def mark_msg_as_processed(msg_id, source_id, today_str):
     global channel_counters
@@ -126,82 +124,73 @@ def build_text(original_text, source_id, msg_date):
     return f"{description}\n\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_str_ar} ج 🔥"
 
 # ==========================================
-# 3. نظام النشر (تمت إضافة طباعات تشخيصية)
+# 3. نظام النشر مع طباعات تشخيصية
 # ==========================================
 async def safe_send(client, messages, source_id):
-    print(f"📨 محاولة إرسال {len(messages)} رسالة من {source_id}")
-    if not messages:
-        print("❌ لا توجد رسائل")
+    if not messages: return
+    
+    msg_id = messages[0].id
+    print(f"📦 [SafeSend] Checking message {msg_id} from {source_id}...")
+
+    if is_msg_processed(msg_id):
+        print(f"⏩ [SafeSend] Message {msg_id} already processed. Skipping.")
         return
+
     valid_messages = [m for m in messages if not m.poll and not (m.photo and is_screenshot(m.photo))]
-    print(f"📸 رسائل صالحة بعد الفلترة: {len(valid_messages)}")
     if not valid_messages:
-        print("❌ كل الرسائل تم تجاهلها (استفتاءات أو سكرين شوت)")
+        print(f"🚫 [SafeSend] No valid media found in group {msg_id} (maybe it was a poll or screenshot).")
         return
+    
     main_msg = next((m for m in valid_messages if (m.caption or m.text)), valid_messages[0])
     msg_date = main_msg.date.replace(tzinfo=timezone.utc)
+    
     if END_DATE_LIMIT and msg_date > END_DATE_LIMIT:
-        print("⏰ تجاوز تاريخ النهاية")
+        print(f"⏳ [SafeSend] Message {msg_id} date {msg_date} is after END_DATE. Skipping.")
         return
+
     retail_text = build_text(main_msg.caption or main_msg.text, source_id, msg_date)
-    print(f"📝 النص الناتج: {repr(retail_text)}")   # سيظهر النص وشكله
     if retail_text is None:
-        print("⛔ النص ممنوع (إعلان/ريفيو)")
+        print(f"🚫 [SafeSend] Message {msg_id} rejected by build_text (Ads/Reviews).")
         return
+
+    print(f"📤 [SafeSend] Attempting to send message {msg_id} to {RETAIL_CHANNEL}...")
     try:
         for m in valid_messages:
-            try:
-                if m.photo:
-                    await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
-                    print("🖼️ تم إرسال صورة")
-                elif m.video:
-                    await client.send_video(RETAIL_CHANNEL, m.video.file_id)
-                    print("🎬 تم إرسال فيديو")
-                elif m.animation:
-                    await client.send_animation(RETAIL_CHANNEL, m.animation.file_id)
-                    print("✨ تم إرسال GIF")
-            except FloodWait as e:
-                print(f"⏳ FloodWait {e.value} ثانية")
-                await asyncio.sleep(e.value)
-            except Exception as e:
-                print(f"💥 خطأ أثناء إرسال الوسائط: {e}")
-            await asyncio.sleep(3)
-        if retail_text != "":
+            if m.photo: await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
+            elif m.video: await client.send_video(RETAIL_CHANNEL, m.video.file_id)
+            elif m.animation: await client.send_animation(RETAIL_CHANNEL, m.animation.file_id)
+            await asyncio.sleep(2) 
+        
+        if retail_text != "": 
             await client.send_message(RETAIL_CHANNEL, retail_text)
-            print("✅ تم إرسال النص")
-        mark_msg_as_processed(messages[0].id, source_id, msg_date.strftime("%d%m"))
-        print("🏁 تمت المعالجة بنجاح")
+        
+        mark_msg_as_processed(msg_id, source_id, msg_date.strftime("%d%m"))
+        print(f"✅ [SafeSend] Success! Message {msg_id} sent and marked.")
+        await asyncio.sleep(3)
+    except FloodWait as e:
+        print(f"⚠️ [SafeSend] FloodWait: Sleeping for {e.value}s")
+        await asyncio.sleep(e.value)
     except Exception as e:
-        print(f"🔥 استثناء عام في safe_send: {e}")
-    await asyncio.sleep(4)
+        print(f"❌ [SafeSend] Error sending {msg_id}: {str(e)}")
 
 async def fetch_history(client):
-    print(f"🔎 سحب الشغل من {START_DATE} إلى {END_DATE_LIMIT}...")
+    print(f"🚀 [History] Fetching started: {START_DATE} to {END_DATE_LIMIT}")
     for channel in SOURCE_CHANNELS:
-        try:
-            all_messages = []
-            async for msg in client.get_chat_history(channel, limit=1000):
-                m_date = msg.date.replace(tzinfo=timezone.utc)
-                if m_date < START_DATE: break
-                if END_DATE_LIMIT and m_date > END_DATE_LIMIT: continue
-                all_messages.append(msg)
-            all_messages.reverse()
-            curr_gid, g_msgs = None, []
-            for msg in all_messages:
-                if msg.media_group_id:
-                    if msg.media_group_id == curr_gid: g_msgs.append(msg)
-                    else:
-                        if g_msgs: await safe_send(client, g_msgs, channel)
-                        g_msgs, curr_gid = [msg], msg.media_group_id
-                else:
-                    if g_msgs: await safe_send(client, g_msgs, channel)
-                    g_msgs, curr_gid = [], None
-                    await safe_send(client, [msg], channel)
-            if g_msgs: await safe_send(client, g_msgs, channel)
-            print(f"✅ اكتملت قناة {channel}")
-        except Exception as e:
-            print(f"❌ خطأ في قناة {channel}: {e}")
-            continue
+        print(f"📡 [History] Scanning channel: {channel}")
+        count = 0
+        async for msg in client.get_chat_history(channel, limit=200):
+            m_date = msg.date.replace(tzinfo=timezone.utc)
+            if m_date < START_DATE:
+                print(f"🛑 [History] Reached START_DATE in {channel}. Breaking scan.")
+                break
+            if END_DATE_LIMIT and m_date > END_DATE_LIMIT:
+                continue
+            
+            # في وضع السحب اليدوي، نجمع الرسائل فقط
+            await safe_send(client, [msg] if not msg.media_group_id else await client.get_media_group(channel, msg.id), channel)
+            count += 1
+        print(f"✨ [History] Finished scanning {channel}. Processed ~{count} items.")
+    print("🏁 [History] Global scan completed.")
 
 # ==========================================
 # 4. تشغيل البوت
@@ -210,41 +199,37 @@ app = Client("retail_v21", api_id=API_ID, api_hash=API_HASH, session_string=SESS
 
 @app.on_message(filters.chat(SOURCE_CHANNELS))
 async def main_handler(client, message):
-    print(f"📩 رسالة واردة من {message.chat.id} - تاريخ: {message.date}")
+    print(f"🔔 [Main] New message incoming from {message.chat.id} (ID: {message.id})")
+    
     if message.poll:
-        print("🗳️ رسالة استفتاء - تجاهل")
+        print(f"⏩ [Main] Ignoring poll message {message.id}")
         return 
+
     m_date = message.date.replace(tzinfo=timezone.utc)
     if m_date < START_DATE or (END_DATE_LIMIT and m_date > END_DATE_LIMIT):
-        print("⏰ خارج النطاق الزمني")
+        print(f"⏩ [Main] Message {message.id} out of date range. Skipping.")
         return
+        
     if message.media_group_id:
+        print(f"📂 [Main] Media group detected {message.media_group_id}. Processing group...")
         try:
             msgs = await client.get_media_group(message.chat.id, message.id)
             await safe_send(client, msgs, message.chat.id)
         except Exception as e:
-            print(f"خطأ في معالجة مجموعة وسائط: {e}")
+            print(f"❌ [Main] Error fetching media group: {str(e)}")
     else:
         await safe_send(client, [message], message.chat.id)
 
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Retail Pro Bot v21.6 Active!"
+def home(): return "Retail Pro Bot Diagnostic Mode Active!"
 
 async def start_bot():
     await app.start()
-    # التحقق من القنوات للتأكيد
-    for ch in SOURCE_CHANNELS:
-        try:
-            peer = await app.resolve_peer(ch)
-            print(f"✅ قناة صالحة: {ch} -> {peer}")
-        except Exception as e:
-            print(f"❌ قناة غير صالحة: {ch} -> {e}")
+    print("🤖 [Bot] Client started. Launching history task...")
     asyncio.create_task(fetch_history(app))
     await idle()
 
 if __name__ == "__main__":
-    # استخدام المنفذ الذي تحدده Koyeb
-    port = int(os.environ.get("PORT", 8000))
-    Thread(target=lambda: web_app.run(host="0.0.0.0", port=port)).start()
+    Thread(target=lambda: web_app.run(host="0.0.0.0", port=8000)).start()
     app.run(start_bot())
