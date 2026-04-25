@@ -45,10 +45,15 @@ RETAIL_MAPPING = { 15: 45, 20: 50, 25: 55, 30: 60, 35: 65, 40: 70, 45: 75, 50: 8
 # 2. الدوال المساعدة
 # ==========================================
 SUPPLIER_PREFIX_MAP = {"aymanelawamy123": "A", "sasaaccessories": "S", "ayselstore55": "AS", "miyokowatches22": "M", -1001132261086: "P", -1001448553593: "I", -1001682055192: "H"}
-AD_KEYWORDS = ["شركه PR", "شركة PR", "النزهه الجديده", "رقم الحجز", "pribore", "بيجامتك", "01012050836"]
+AD_KEYWORDS = ["شركه PR", "شركة PR", "النزهه الجديده", "رقم الحجز", "pribore", "بيجامتك", "01012050836", "للتواصل لطلبات الجمله", "عبدالرحمن", "01505530190"]
 REVIEW_KEYWORDS = ["ريفيو", "ريفيوهات", "آراء", "اراء", "رأي", "راي", "وصلنا", "تجربة", "تسلم", "شكرا"]
 
 channel_counters = {}
+
+def normalize_numbers(text):
+    if not text: return ""
+    # تحويل الأرقام العربية (١٢٣) إلى إنجليزية (123) لضمان عمل Regex
+    return text.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
 
 def generate_my_code(source_channel_id, msg_date):
     global channel_counters
@@ -59,10 +64,6 @@ def generate_my_code(source_channel_id, msg_date):
     prefix = SUPPLIER_PREFIX_MAP.get(source_channel_id, "UN")
     return f"{prefix}{channel_counters[counter_key]:02d}{today_str}"
 
-def normalize_numbers(text):
-    if not text: return ""
-    return text.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
-
 def is_screenshot(photo):
     if not photo: return False
     ratio = photo.height / photo.width
@@ -71,58 +72,51 @@ def is_screenshot(photo):
 def extract_real_price(text):
     if not text: return None
     norm_text = normalize_numbers(text)
-    clean_for_search = re.sub(r'.*(?:سعر الدسته|سعر الدستة|جمله|جملة|من اول \d+ قطع).*', '', norm_text)
+    clean_for_search = re.sub(r'.*(?:من اول دسته|من اول دستة|من اول \d+ قطع|جمله|جملة).*', '', norm_text)
     clean_for_search = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر|شكل|لون|ق)', '', clean_for_search, flags=re.IGNORECASE)
+
     if any(kw in norm_text for kw in ["بدل", "بكام", "بس", "عرض"]):
         nums = [int(n) for n in re.findall(r'(\d+)', clean_for_search) if 15 <= int(n) <= 2000]
         if nums: return min(nums)
-    price_match = re.search(r'(?:من اول قطعه|قطعه|قطعة|بسعر|السعر|سعر|price)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
+
+    price_match = re.search(r'(?:اقل من دسته|اقل من دستة|قطعه|قطعة|بسعر|السعر|سعر|price|L.E|LE)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match: return int(price_match.group(1))
     
-    # تحسين جديد: البحث عن رقم يليه حرف "ج" أو رقم في نهاية السطر متبوع بإيموجي
-    regex_price = re.search(r'(\d+)\s*(?:ج|LE|L.E)', clean_for_search, re.IGNORECASE)
-    if regex_price: return int(regex_price.group(1))
+    price_match_rev = re.search(r'(\d+)\s*(?:ج|L\.E|LE|egp|جنيه|جنيها)', clean_for_search, re.IGNORECASE)
+    if price_match_rev: return int(price_match_rev.group(1))
 
     nums = [int(n) for n in re.findall(r'(\d+)', clean_for_search) if 15 <= int(n) <= 2000]
     return nums[-1] if nums else None
 
 def build_text(original_text, source_id, msg_date):
-    prefix = SUPPLIER_PREFIX_MAP.get(source_id, "")
-    if original_text and any(word in original_text for word in AD_KEYWORDS): return None
-    if original_text and any(word in original_text for word in REVIEW_KEYWORDS): return None
-    if not original_text or original_text.strip() == "": return ""
+    if not original_text: return ""
+    norm_text = normalize_numbers(original_text)
+    
+    if any(word in norm_text for word in AD_KEYWORDS): return None
+    if any(word in norm_text for word in REVIEW_KEYWORDS): return None
     
     my_code = generate_my_code(source_id, msg_date)
     found_price_val = extract_real_price(original_text)
     final_price_val = RETAIL_MAPPING.get(found_price_val, "")
     price_str_ar = convert_to_arabic_numbers(final_price_val)
     
-    processed_text = normalize_numbers(original_text)
-    
     cleaned_lines = []
-    for line in processed_text.split('\n'):
+    for line in norm_text.split('\n'):
         line = line.strip()
         if not line: continue
         
-        # 1. حذف السطر بالكامل لو إعلان أو جملة
         patterns_to_delete = [
             r'^[A-Z]+\d+.*', r'.*(?:اونلاين|online).*', r'.*(?:جمله|جملة).*', 
-            r'.*(?:سعر الدسته|سعر الدستة|من اول \d+ قطع).*', r'^[\W\s]*\d+[\W\s]*$'
+            r'.*(?:من اول دسته|من اول دستة|من اول \d+ قطع).*', r'^[\W\s]*\d+[\W\s]*$'
         ]
         if any(re.search(p, line, re.IGNORECASE) for p in patterns_to_delete):
             continue
             
-        # 2. التعديل المتقدم: قص السعر القديم من داخل السطر
-        # أ) يبحث عن "السعر" أو "سعر" وما بعدها
-        line = re.sub(r'(?:السعر|سعر|price|بسعر).*', '', line, flags=re.IGNORECASE).strip()
+        # حذف السعر القديم بكل صيغه (L.E, ج, جنيه)
+        line = re.sub(r'(?:السعر|سعر|price|بسعر|قطعه|قطعة|اقل من).*', '', line, flags=re.IGNORECASE).strip()
+        line = re.sub(r'[:：]?\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه|جنيها).*', '', line, flags=re.IGNORECASE).strip()
+        line = re.sub(r'\d+\s*(?:ج|LE|L\.E|egp|جنيه|جنيها).*', '', line, flags=re.IGNORECASE).strip()
         
-        # ب) يبحث عن نمط "رقم + ج" في نهاية السطر (مثل 120ج) ويحذفه
-        line = re.sub(r'\d+\s*(?:ج|LE|L.E).*', '', line, flags=re.IGNORECASE).strip()
-        
-        # ج) لو السطر عبارة عن رقم فقط متبوع بإيموجي (مثل: 120ج ❤️🔥)
-        if re.match(r'^\d+\s*[\w\s]*$', line):
-            continue
-
         if line: cleaned_lines.append(line)
 
     description = "\n".join(cleaned_lines)
@@ -134,8 +128,10 @@ def build_text(original_text, source_id, msg_date):
 media_groups = {}
 async def safe_send(client, messages, source_id):
     if not messages: return
-    valid_messages = [m for m in messages if not (m.photo and is_screenshot(m.photo))]
+    # تجاهل استطلاعات الرأي (Polls)
+    valid_messages = [m for m in messages if not m.poll and not (m.photo and is_screenshot(m.photo))]
     if not valid_messages: return
+    
     main_msg = next((m for m in valid_messages if (m.caption or m.text)), valid_messages[0])
     msg_date = main_msg.date.replace(tzinfo=timezone.utc)
     retail_text = build_text(main_msg.caption or main_msg.text, source_id, msg_date)
@@ -183,6 +179,7 @@ app = Client("retail_v21", api_id=API_ID, api_hash=API_HASH, session_string=SESS
 
 @app.on_message(filters.chat(SOURCE_CHANNELS))
 async def main_handler(client, message):
+    if message.poll: return # منع استطلاعات الرأي فوراً
     if message.date.replace(tzinfo=timezone.utc) < START_DATE: return
     if message.media_group_id:
         gid = message.media_group_id
