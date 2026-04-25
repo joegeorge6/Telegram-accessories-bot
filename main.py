@@ -17,12 +17,12 @@ SESSION_STRING = os.environ.get("SESSION_STRING", "")
 RETAIL_CHANNEL = "@girlsfashionesta"
 DB_FILE = "processed_msgs.txt"
 
-# خريطة ترجمة الأكواد الأصلية (خاصة بمكتب P)
 P_CODE_TRANSLATION = {
     "A": "انسيال", "K": "خلخال", "N": "سلسلة", "CP": "كوليه", 
     "C": "كوليه", "E": "حلق", "R": "خاتم", "B": "اسورة"
 }
 
+# تنظيف الذاكرة عند كل إعادة تشغيل لضمان سحب النطاق المحدد
 if os.path.exists(DB_FILE):
     os.remove(DB_FILE)
 
@@ -67,15 +67,18 @@ def is_msg_processed(msg_id):
     if not os.path.exists(DB_FILE): return False
     with open(DB_FILE, "r") as f: return str(msg_id) in f.read().splitlines()
 
-def mark_msg_as_processed(msg_id, source_id, today_str):
-    global channel_counters
+def mark_msg_as_processed(msg_id):
     with open(DB_FILE, "a") as f: f.write(str(msg_id) + "\n")
+
+def increment_counter(source_id, today_str):
+    global channel_counters
     counter_key = f"{source_id}_{today_str}"
     channel_counters[counter_key] = channel_counters.get(counter_key, 0) + 1
 
 def generate_my_code(source_channel_id, msg_date):
     today_str = msg_date.strftime("%d%m")
     counter_key = f"{source_channel_id}_{today_str}"
+    # العداد يحسب الرقم التالي
     current_num = channel_counters.get(counter_key, 0) + 1
     prefix = SUPPLIER_PREFIX_MAP.get(source_channel_id, "UN")
     return f"{prefix}{current_num:02d}{today_str}"
@@ -102,71 +105,99 @@ def build_text(original_text, source_id, msg_date):
     found_price_val = extract_real_price(original_text)
     final_price_val = RETAIL_MAPPING.get(found_price_val, "")
     price_str_ar = convert_to_arabic_numbers(final_price_val)
-    my_code = generate_my_code(source_id, msg_date)
     
-    cleaned_lines = []
-    # استخراج كود القناة الأصلية للترجمة إذا لم يوجد وصف
+    # استخراج كود القناة الأصلية للترجمة
     original_code_prefix = ""
     code_match = re.search(r'([A-Z]+)\d+', norm_text, re.IGNORECASE)
     if code_match: original_code_prefix = code_match.group(1).upper()
 
+    cleaned_lines = []
     for line in norm_text.split('\n'):
         line = line.strip()
         if not line: continue
-        patterns_to_delete = [
-            r'^[A-Z]+\d+.*', r'.*(?:اونلاين|online).*', 
-            r'.*(?:سعر العلبه|سعر العلبة).*', r'.*(?:من اول دسته|من اول دستة|من اول \d+ قطع).*', 
-            r'.*(?:اختيار).*', r'^[\W\s]*\d+[\W\s]*$'
-        ]
+        if re.match(r'^[A-Z]+\d+.*$', line, re.IGNORECASE) or re.match(r'^\d+\s*[:：]?\s*(?:ج|LE|L\.E|السعر).*$', line, re.IGNORECASE):
+            continue
+        patterns_to_delete = [r'.*(?:اونلاين|online).*', r'.*(?:سعر العلبه|سعر العلبة).*', r'.*(?:من اول دسته|من اول دستة|من اول \d+ قطع).*', r'.*(?:اختيار).*']
         if any(re.search(p, line, re.IGNORECASE) for p in patterns_to_delete): continue
-        line = re.sub(r'(?:السعر|سعر|price|بسعر|قطعه|قطعة|اقل من|اختيار|الجمله|الجملة|جمله|جملة).*', '', line, flags=re.IGNORECASE).strip()
+        line = re.sub(r'(?:السعر|سعر|price|بسعر|قطعه|قطعة|اقل من|الجمله|الجملة|جمله|جملة).*', '', line, flags=re.IGNORECASE).strip()
         line = re.sub(r'[:：]?\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
         if line: cleaned_lines.append(line)
 
     description = "\n".join(cleaned_lines)
-    
-    # إذا كان الوصف فارغاً (يعني البوست الأصلي كان كود وسعر بس)
-    if not description and original_code_prefix in P_CODE_TRANSLATION:
+    has_description = any(c.isalpha() or '\u0600' <= c <= '\u06FF' for c in description)
+
+    if not has_description and original_code_prefix in P_CODE_TRANSLATION:
         item_name = P_CODE_TRANSLATION[original_code_prefix]
         description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨️"
 
+    # توليد الكود هنا فقط للأصناف الحقيقية
+    my_code = generate_my_code(source_id, msg_date)
+    # ملاحظة: سنقوم بزيادة العداد فعلياً في دالة safe_send لضمان الدقة
     return f"{description}\n\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_str_ar} ج 🔥"
 
 # ==========================================
-# 3. نظام النشر مع طباعات تشخيصية
+# 3. نظام النشر
 # ==========================================
 async def safe_send(client, messages, source_id):
-    if not messages: return
-    msg_id = messages[0].id
-    if is_msg_processed(msg_id): return
+    if not messages or is_msg_processed(messages[0].id): return
     valid_messages = [m for m in messages if not m.poll]
     if not valid_messages: return
+    
     main_msg = next((m for m in valid_messages if (m.caption or m.text)), valid_messages[0])
     msg_date = main_msg.date.replace(tzinfo=timezone.utc)
     if END_DATE_LIMIT and msg_date > END_DATE_LIMIT: return
-    retail_text = build_text(main_msg.caption or main_msg.text, source_id, msg_date)
+
+    # تحضير النص
+    raw_caption = main_msg.caption or main_msg.text
+    retail_text = build_text(raw_caption, source_id, msg_date)
+    
     if retail_text is None: return
+    
     try:
+        # إرسال الميديا
         for m in valid_messages:
             if m.photo: await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
             elif m.video: await client.send_video(RETAIL_CHANNEL, m.video.file_id)
             elif m.animation: await client.send_animation(RETAIL_CHANNEL, m.animation.file_id)
             await asyncio.sleep(2) 
-        if retail_text != "": await client.send_message(RETAIL_CHANNEL, retail_text)
-        mark_msg_as_processed(msg_id, source_id, msg_date.strftime("%d%m"))
+        
+        # إرسال النص
+        if retail_text != "": 
+            await client.send_message(RETAIL_CHANNEL, retail_text)
+            # لا نزيد العداد إلا إذا كان هناك نص (كود) تم إرساله
+            if raw_caption: 
+                increment_counter(source_id, msg_date.strftime("%d%m"))
+        
+        mark_msg_as_processed(messages[0].id)
         await asyncio.sleep(3)
     except FloodWait as e: await asyncio.sleep(e.value)
     except: pass
 
 async def fetch_history(client):
-    print(f"🚀 [History] Fetching: {START_DATE} to {END_DATE_LIMIT}")
+    print(f"🚀 [History] Fetching started...")
     for channel in SOURCE_CHANNELS:
-        async for msg in client.get_chat_history(channel, limit=300):
+        all_items = [] # لتجميع البوستات (رسائل مفردة أو ألبومات)
+        processed_group_ids = set()
+
+        async for msg in client.get_chat_history(channel, limit=400):
             m_date = msg.date.replace(tzinfo=timezone.utc)
             if m_date < START_DATE: break
             if END_DATE_LIMIT and m_date > END_DATE_LIMIT: continue
-            msgs_to_send = [msg] if not msg.media_group_id else await client.get_media_group(channel, msg.id)
-            await safe_send(client, msgs_to_send, channel)
+            
+            if msg.media_group_id:
+                if msg.media_group_id in processed_group_ids: continue
+                processed_group_ids.add(msg.media_group_id)
+                group = await client.get_media_group(channel, msg.id)
+                all_items.append(group)
+            else:
+                all_items.append([msg])
+
+        # عكس القائمة بالكامل ليكون القديم أولاً (من فوق لتحت)
+        all_items.reverse()
+        
+        for item in all_items:
+            await safe_send(client, item, channel)
+    print("✅ [History] Finished.")
 
 # ==========================================
 # 4. تشغيل البوت
@@ -187,7 +218,7 @@ async def main_handler(client, message):
 
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Retail Pro Bot Active!"
+def home(): return "Retail Pro Bot v21.8 Active!"
 
 async def start_bot():
     await app.start()
