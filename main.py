@@ -17,9 +17,13 @@ SESSION_STRING = os.environ.get("SESSION_STRING", "")
 RETAIL_CHANNEL = "@girlsfashionesta"
 DB_FILE = "processed_msgs.txt"
 
-# تنظيف الذاكرة عند كل إعادة تشغيل لضمان جلب الشغل القديم (حسب طلبك السابق)
+# خريطة ترجمة الأكواد الأصلية (خاصة بمكتب P)
+P_CODE_TRANSLATION = {
+    "A": "انسيال", "K": "خلخال", "N": "سلسلة", "CP": "كوليه", 
+    "C": "كوليه", "E": "حلق", "R": "خاتم", "B": "اسورة"
+}
+
 if os.path.exists(DB_FILE):
-    print(f"🧹 [System] Cleaning memory file: {DB_FILE}")
     os.remove(DB_FILE)
 
 def convert_to_arabic_numbers(text):
@@ -33,13 +37,11 @@ def normalize_numbers(text):
 
 def parse_date(date_str, default_date, is_end=False):
     if not date_str or date_str.strip() == "": return default_date
-    if len(date_str.split('-')) == 2:
-        date_str += f"-{datetime.now().year}"
+    if len(date_str.split('-')) == 2: date_str += f"-{datetime.now().year}"
     for fmt in ("%d-%m-%Y", "%Y-%m-%d", "%m-%d-%Y"):
         try:
             dt = datetime.strptime(date_str.strip(), fmt)
-            if is_end:
-                return dt.replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
+            if is_end: return dt.replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
             return dt.replace(hour=0, minute=0, second=0, tzinfo=timezone.utc)
         except: continue
     return default_date
@@ -63,14 +65,11 @@ channel_counters = {}
 
 def is_msg_processed(msg_id):
     if not os.path.exists(DB_FILE): return False
-    with open(DB_FILE, "r") as f:
-        content = f.read()
-        return str(msg_id) in content.splitlines()
+    with open(DB_FILE, "r") as f: return str(msg_id) in f.read().splitlines()
 
 def mark_msg_as_processed(msg_id, source_id, today_str):
     global channel_counters
-    with open(DB_FILE, "a") as f:
-        f.write(str(msg_id) + "\n")
+    with open(DB_FILE, "a") as f: f.write(str(msg_id) + "\n")
     counter_key = f"{source_id}_{today_str}"
     channel_counters[counter_key] = channel_counters.get(counter_key, 0) + 1
 
@@ -80,10 +79,6 @@ def generate_my_code(source_channel_id, msg_date):
     current_num = channel_counters.get(counter_key, 0) + 1
     prefix = SUPPLIER_PREFIX_MAP.get(source_channel_id, "UN")
     return f"{prefix}{current_num:02d}{today_str}"
-
-def is_screenshot(photo):
-    if not photo: return False
-    return (photo.height / photo.width) > 1.8
 
 def extract_real_price(text):
     if not text: return None
@@ -103,11 +98,18 @@ def build_text(original_text, source_id, msg_date):
     norm_text = normalize_numbers(original_text)
     if any(word in norm_text for word in AD_KEYWORDS): return None
     if any(word in norm_text for word in REVIEW_KEYWORDS): return None
+    
     found_price_val = extract_real_price(original_text)
     final_price_val = RETAIL_MAPPING.get(found_price_val, "")
     price_str_ar = convert_to_arabic_numbers(final_price_val)
     my_code = generate_my_code(source_id, msg_date)
+    
     cleaned_lines = []
+    # استخراج كود القناة الأصلية للترجمة إذا لم يوجد وصف
+    original_code_prefix = ""
+    code_match = re.search(r'([A-Z]+)\d+', norm_text, re.IGNORECASE)
+    if code_match: original_code_prefix = code_match.group(1).upper()
+
     for line in norm_text.split('\n'):
         line = line.strip()
         if not line: continue
@@ -120,7 +122,14 @@ def build_text(original_text, source_id, msg_date):
         line = re.sub(r'(?:السعر|سعر|price|بسعر|قطعه|قطعة|اقل من|اختيار|الجمله|الجملة|جمله|جملة).*', '', line, flags=re.IGNORECASE).strip()
         line = re.sub(r'[:：]?\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
         if line: cleaned_lines.append(line)
+
     description = "\n".join(cleaned_lines)
+    
+    # إذا كان الوصف فارغاً (يعني البوست الأصلي كان كود وسعر بس)
+    if not description and original_code_prefix in P_CODE_TRANSLATION:
+        item_name = P_CODE_TRANSLATION[original_code_prefix]
+        description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯\nلمسة شيك وجودة باينة من أول نظرة ✨️"
+
     return f"{description}\n\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_str_ar} ج 🔥"
 
 # ==========================================
@@ -128,69 +137,36 @@ def build_text(original_text, source_id, msg_date):
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages: return
-    
     msg_id = messages[0].id
-    print(f"📦 [SafeSend] Checking message {msg_id} from {source_id}...")
-
-    if is_msg_processed(msg_id):
-        print(f"⏩ [SafeSend] Message {msg_id} already processed. Skipping.")
-        return
-
-    valid_messages = [m for m in messages if not m.poll and not (m.photo and is_screenshot(m.photo))]
-    if not valid_messages:
-        print(f"🚫 [SafeSend] No valid media found in group {msg_id} (maybe it was a poll or screenshot).")
-        return
-    
+    if is_msg_processed(msg_id): return
+    valid_messages = [m for m in messages if not m.poll]
+    if not valid_messages: return
     main_msg = next((m for m in valid_messages if (m.caption or m.text)), valid_messages[0])
     msg_date = main_msg.date.replace(tzinfo=timezone.utc)
-    
-    if END_DATE_LIMIT and msg_date > END_DATE_LIMIT:
-        print(f"⏳ [SafeSend] Message {msg_id} date {msg_date} is after END_DATE. Skipping.")
-        return
-
+    if END_DATE_LIMIT and msg_date > END_DATE_LIMIT: return
     retail_text = build_text(main_msg.caption or main_msg.text, source_id, msg_date)
-    if retail_text is None:
-        print(f"🚫 [SafeSend] Message {msg_id} rejected by build_text (Ads/Reviews).")
-        return
-
-    print(f"📤 [SafeSend] Attempting to send message {msg_id} to {RETAIL_CHANNEL}...")
+    if retail_text is None: return
     try:
         for m in valid_messages:
             if m.photo: await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
             elif m.video: await client.send_video(RETAIL_CHANNEL, m.video.file_id)
             elif m.animation: await client.send_animation(RETAIL_CHANNEL, m.animation.file_id)
             await asyncio.sleep(2) 
-        
-        if retail_text != "": 
-            await client.send_message(RETAIL_CHANNEL, retail_text)
-        
+        if retail_text != "": await client.send_message(RETAIL_CHANNEL, retail_text)
         mark_msg_as_processed(msg_id, source_id, msg_date.strftime("%d%m"))
-        print(f"✅ [SafeSend] Success! Message {msg_id} sent and marked.")
         await asyncio.sleep(3)
-    except FloodWait as e:
-        print(f"⚠️ [SafeSend] FloodWait: Sleeping for {e.value}s")
-        await asyncio.sleep(e.value)
-    except Exception as e:
-        print(f"❌ [SafeSend] Error sending {msg_id}: {str(e)}")
+    except FloodWait as e: await asyncio.sleep(e.value)
+    except: pass
 
 async def fetch_history(client):
-    print(f"🚀 [History] Fetching started: {START_DATE} to {END_DATE_LIMIT}")
+    print(f"🚀 [History] Fetching: {START_DATE} to {END_DATE_LIMIT}")
     for channel in SOURCE_CHANNELS:
-        print(f"📡 [History] Scanning channel: {channel}")
-        count = 0
-        async for msg in client.get_chat_history(channel, limit=200):
+        async for msg in client.get_chat_history(channel, limit=300):
             m_date = msg.date.replace(tzinfo=timezone.utc)
-            if m_date < START_DATE:
-                print(f"🛑 [History] Reached START_DATE in {channel}. Breaking scan.")
-                break
-            if END_DATE_LIMIT and m_date > END_DATE_LIMIT:
-                continue
-            
-            # في وضع السحب اليدوي، نجمع الرسائل فقط
-            await safe_send(client, [msg] if not msg.media_group_id else await client.get_media_group(channel, msg.id), channel)
-            count += 1
-        print(f"✨ [History] Finished scanning {channel}. Processed ~{count} items.")
-    print("🏁 [History] Global scan completed.")
+            if m_date < START_DATE: break
+            if END_DATE_LIMIT and m_date > END_DATE_LIMIT: continue
+            msgs_to_send = [msg] if not msg.media_group_id else await client.get_media_group(channel, msg.id)
+            await safe_send(client, msgs_to_send, channel)
 
 # ==========================================
 # 4. تشغيل البوت
@@ -199,34 +175,22 @@ app = Client("retail_v21", api_id=API_ID, api_hash=API_HASH, session_string=SESS
 
 @app.on_message(filters.chat(SOURCE_CHANNELS))
 async def main_handler(client, message):
-    print(f"🔔 [Main] New message incoming from {message.chat.id} (ID: {message.id})")
-    
-    if message.poll:
-        print(f"⏩ [Main] Ignoring poll message {message.id}")
-        return 
-
+    if message.poll: return 
     m_date = message.date.replace(tzinfo=timezone.utc)
-    if m_date < START_DATE or (END_DATE_LIMIT and m_date > END_DATE_LIMIT):
-        print(f"⏩ [Main] Message {message.id} out of date range. Skipping.")
-        return
-        
+    if m_date < START_DATE or (END_DATE_LIMIT and m_date > END_DATE_LIMIT): return
     if message.media_group_id:
-        print(f"📂 [Main] Media group detected {message.media_group_id}. Processing group...")
         try:
             msgs = await client.get_media_group(message.chat.id, message.id)
             await safe_send(client, msgs, message.chat.id)
-        except Exception as e:
-            print(f"❌ [Main] Error fetching media group: {str(e)}")
-    else:
-        await safe_send(client, [message], message.chat.id)
+        except: pass
+    else: await safe_send(client, [message], message.chat.id)
 
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Retail Pro Bot Diagnostic Mode Active!"
+def home(): return "Retail Pro Bot Active!"
 
 async def start_bot():
     await app.start()
-    print("🤖 [Bot] Client started. Launching history task...")
     asyncio.create_task(fetch_history(app))
     await idle()
 
