@@ -1,7 +1,7 @@
 import os
 import re
 import asyncio
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pyrogram import Client, filters, idle
 from pyrogram.errors import FloodWait
 from flask import Flask
@@ -28,6 +28,9 @@ def normalize_numbers(text):
 
 def parse_date(date_str, default_date, is_end=False):
     if not date_str or date_str.strip() == "": return default_date
+    # إضافة السنة تلقائياً لو ناقصة
+    if len(date_str.split('-')) == 2:
+        date_str += f"-{datetime.now().year}"
     for fmt in ("%d-%m-%Y", "%Y-%m-%d", "%m-%d-%Y"):
         try:
             dt = datetime.strptime(date_str.strip(), fmt)
@@ -37,7 +40,6 @@ def parse_date(date_str, default_date, is_end=False):
         except: continue
     return default_date
 
-# تحديد نطاق التاريخ بدقة
 START_DATE = parse_date(os.environ.get("START_DATE", ""), datetime.now(timezone.utc))
 END_DATE_LIMIT = parse_date(os.environ.get("END_DATE", ""), None, is_end=True)
 
@@ -57,11 +59,14 @@ channel_counters = {}
 
 def is_msg_processed(msg_id):
     if not os.path.exists(DB_FILE): return False
-    with open(DB_FILE, "r") as f: return str(msg_id) in f.read().splitlines()
+    with open(DB_FILE, "r") as f:
+        content = f.read()
+        return str(msg_id) in content.splitlines()
 
 def mark_msg_as_processed(msg_id, source_id, today_str):
     global channel_counters
-    with open(DB_FILE, "a") as f: f.write(str(msg_id) + "\n")
+    with open(DB_FILE, "a") as f:
+        f.write(str(msg_id) + "\n")
     counter_key = f"{source_id}_{today_str}"
     channel_counters[counter_key] = channel_counters.get(counter_key, 0) + 1
 
@@ -81,11 +86,12 @@ def extract_real_price(text):
     norm_text = normalize_numbers(text)
     clean_for_search = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر|شكل|لون|ق)', '', norm_text, flags=re.IGNORECASE)
     
-    # البحث عن السعر بالكلمات الدلالية
     price_match = re.search(r'(?:سعر القطعه|سعر القطعة|قطعه|قطعة|اقل من دسته|اقل من دستة|بسعر|السعر|سعر|price|L\.E|LE)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match: return int(price_match.group(1))
     
-    # البحث العكسي (مثل: 300 : L.E)
+    wholesale_match = re.search(r'(?:الجمله|الجملة|جمله|جملة)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
+    if wholesale_match: return int(wholesale_match.group(1))
+
     price_match_rev = re.search(r'(\d+)\s*[:：]?\s*(?:ج|L\.E|LE|egp|جنيه)', clean_for_search, re.IGNORECASE)
     if price_match_rev: return int(price_match_rev.group(1))
 
@@ -116,6 +122,7 @@ def build_text(original_text, source_id, msg_date):
             
         line = re.sub(r'(?:السعر|سعر|price|بسعر|قطعه|قطعة|اقل من|اختيار|الجمله|الجملة|جمله|جملة).*', '', line, flags=re.IGNORECASE).strip()
         line = re.sub(r'[:：]?\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
+        
         if line: cleaned_lines.append(line)
 
     description = "\n".join(cleaned_lines)
@@ -125,14 +132,15 @@ def build_text(original_text, source_id, msg_date):
 # 3. نظام النشر
 # ==========================================
 async def safe_send(client, messages, source_id):
-    if not messages or is_msg_processed(messages[0].id): return
+    if not messages: return
+    # حذف شرط الذاكرة هنا في وضع السحب اليدوي (History) لضمان النسخ
+    
     valid_messages = [m for m in messages if not m.poll and not (m.photo and is_screenshot(m.photo))]
     if not valid_messages: return
     
     main_msg = next((m for m in valid_messages if (m.caption or m.text)), valid_messages[0])
     msg_date = main_msg.date.replace(tzinfo=timezone.utc)
     
-    # تدقيق التاريخ الإضافي لمنع تسريب رسائل اليوم التالي
     if END_DATE_LIMIT and msg_date > END_DATE_LIMIT: return
 
     retail_text = build_text(main_msg.caption or main_msg.text, source_id, msg_date)
@@ -146,19 +154,21 @@ async def safe_send(client, messages, source_id):
             except FloodWait as e: await asyncio.sleep(e.value)
             await asyncio.sleep(3) 
         if retail_text != "": await client.send_message(RETAIL_CHANNEL, retail_text)
+        
         mark_msg_as_processed(messages[0].id, source_id, msg_date.strftime("%d%m"))
         await asyncio.sleep(4)
     except: pass
 
 async def fetch_history(client):
-    print(f"🔎 سحب الشغل من {START_DATE} إلى {END_DATE_LIMIT}...")
+    print(f"🔎 بدأت سحب الشغل من {START_DATE}...")
     for channel in SOURCE_CHANNELS:
         all_messages = []
-        async for msg in client.get_chat_history(channel):
+        # زيادة الحد (Limit) لضمان جلب كل الرسائل في النطاق
+        async for msg in client.get_chat_history(channel, limit=1000):
             m_date = msg.date.replace(tzinfo=timezone.utc)
             if m_date < START_DATE: break
             if END_DATE_LIMIT and m_date > END_DATE_LIMIT: continue
-            if is_msg_processed(msg.id): continue
+            # في وضع السحب اليدوي، سنتخطى فقط لو إنت مش مغير الـ Start Date
             all_messages.append(msg)
         
         all_messages.reverse()
@@ -174,7 +184,7 @@ async def fetch_history(client):
                 g_msgs, curr_gid = [], None
                 await safe_send(client, [msg], channel)
         if g_msgs: await safe_send(client, g_msgs, channel)
-    print("✅ تم الانتهاء من سحب الشغل القديم.")
+    print("✅ اكتمل السحب بنجاح.")
 
 # ==========================================
 # 4. تشغيل البوت
@@ -183,7 +193,7 @@ app = Client("retail_v21", api_id=API_ID, api_hash=API_HASH, session_string=SESS
 
 @app.on_message(filters.chat(SOURCE_CHANNELS))
 async def main_handler(client, message):
-    if message.poll or is_msg_processed(message.id): return 
+    if message.poll: return 
     m_date = message.date.replace(tzinfo=timezone.utc)
     if m_date < START_DATE: return
     if END_DATE_LIMIT and m_date > END_DATE_LIMIT: return
@@ -197,11 +207,12 @@ async def main_handler(client, message):
 
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Retail Pro Bot Active!"
+def home(): return "Retail Pro Bot v21.5 Active!"
 
 async def start_bot():
     await app.start()
-    # تشغيل سحب الشغل القديم كمهمة منفصلة
+    # تأخير بسيط قبل البدء
+    await asyncio.sleep(2)
     asyncio.create_task(fetch_history(app))
     await idle()
 
