@@ -22,6 +22,9 @@ P_CODE_TRANSLATION = {
     "C": "كوليه", "E": "حلق", "R": "خاتم", "B": "اسورة"
 }
 
+# لتتبع المجموعات التي قيد المعالجة حالياً لمنع التكرار والقفز في العداد
+processed_media_groups = set()
+
 if os.path.exists(DB_FILE):
     os.remove(DB_FILE)
 
@@ -66,9 +69,11 @@ def is_msg_processed(msg_id):
     if not os.path.exists(DB_FILE): return False
     with open(DB_FILE, "r") as f: return str(msg_id) in f.read().splitlines()
 
-def mark_msg_as_processed(msg_id, source_id, today_str):
-    global channel_counters
+def mark_msg_as_processed(msg_id):
     with open(DB_FILE, "a") as f: f.write(str(msg_id) + "\n")
+
+def increment_counter(source_id, today_str):
+    global channel_counters
     counter_key = f"{source_id}_{today_str}"
     channel_counters[counter_key] = channel_counters.get(counter_key, 0) + 1
 
@@ -82,22 +87,15 @@ def generate_my_code(source_channel_id, msg_date):
 def extract_real_price(text):
     if not text: return None
     norm_text = normalize_numbers(text)
-    
-    # تنظيف المقاسات أولاً
     clean_for_search = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر|شكل|لون|ق)', '', norm_text, flags=re.IGNORECASE)
-
-    # 1. القاعدة الذهبية: الأولوية لسعر الأونلاين أو القطعة أو الرقم الأعلى (باستثناء الجملة الصريحة)
-    price_match = re.search(r'(?:اونلاين|أونلاين|online|سعر القطعه|قطعه|قطعة|اقل من دسته|بسعر|السعر|سعر|price|L\.E|LE)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
+    price_match = re.search(r'(?:أونلاين|اونلاين|online|سعر القطعه|سعر القطعة|قطعه|قطعة|اقل من دسته|اقل من دستة|بسعر|السعر|سعر|price|L\.E|LE)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match: return int(price_match.group(1))
-    
-    # 2. استبعاد الجملة تماماً والبحث عن السعر المتبقي
-    no_wholesale = re.sub(r'.*(?:جمله|جملة|دسته|دستة).*', '', clean_for_search)
-    nums = [int(n) for n in re.findall(r'(\d+)', no_wholesale) if 15 <= int(n) <= 2000]
-    if nums: return nums[-1] # نأخذ آخر رقم (غالباً هو السعر الفردي)
-
-    # 3. أي رقم منطقي
-    nums_all = [int(n) for n in re.findall(r'(\d+)', clean_for_search) if 15 <= int(n) <= 2000]
-    return max(nums_all) if nums_all else None
+    wholesale_match = re.search(r'(?:الجمله|الجملة|جمله|جملة)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
+    if wholesale_match: return int(wholesale_match.group(1))
+    price_match_rev = re.search(r'(\d+)\s*[:：]?\s*(?:ج|L\.E|LE|egp|جنيه)', clean_for_search, re.IGNORECASE)
+    if price_match_rev: return int(price_match_rev.group(1))
+    nums = [int(n) for n in re.findall(r'(\d+)', clean_for_search) if 15 <= int(n) <= 2000]
+    return nums[-1] if nums else None
 
 def build_text(original_text, source_id, msg_date):
     if not original_text: return ""
@@ -109,7 +107,6 @@ def build_text(original_text, source_id, msg_date):
     final_price_val = RETAIL_MAPPING.get(found_price_val, "")
     price_str_ar = convert_to_arabic_numbers(final_price_val)
     
-    # استخراج كود القناة الأصلية للترجمة
     original_code_prefix = ""
     code_match = re.search(r'([A-Z]+)\d+', norm_text, re.IGNORECASE)
     if code_match: original_code_prefix = code_match.group(1).upper()
@@ -118,18 +115,12 @@ def build_text(original_text, source_id, msg_date):
     for line in norm_text.split('\n'):
         line = line.strip()
         if not line: continue
-        
-        # حذف سطور الكود والجملة والعلب والاختيار
-        patterns_to_delete = [
-            r'^[A-Z]+\d+.*$', r'.*(?:جمله|جملة|دسته|دستة).*', 
-            r'.*(?:سعر العلبه|سعر العلبة).*', r'.*(?:اختيار).*'
-        ]
+        if re.match(r'^[A-Z]+\d+.*$', line, re.IGNORECASE) or re.match(r'^\d+\s*[:：]?\s*(?:ج|LE|L\.E|السعر).*$', line, re.IGNORECASE):
+            continue
+        patterns_to_delete = [r'.*(?:جمله|جملة|دسته|دستة).*', r'.*(?:سعر العلبه|سعر العلبة).*', r'.*(?:اختيار).*']
         if any(re.search(p, line, re.IGNORECASE) for p in patterns_to_delete): continue
-            
-        # تنظيف السعر من داخل سطر الوصف (بما في ذلك كلمة اونلاين)
-        line = re.sub(r'(?:السعر|سعر|price|بسعر|قطعه|قطعة|اونلاين|أونلاين|online|اقل من).*', '', line, flags=re.IGNORECASE).strip()
+        line = re.sub(r'(?:السعر|سعر|price|بسعر|قطعه|قطعة|أونلاين|اونلاين|online|اقل من).*', '', line, flags=re.IGNORECASE).strip()
         line = re.sub(r'[:：]?\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
-        
         if line: cleaned_lines.append(line)
 
     description = "\n".join(cleaned_lines)
@@ -143,7 +134,7 @@ def build_text(original_text, source_id, msg_date):
     return f"{description}\n\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_str_ar} ج 🔥"
 
 # ==========================================
-# 3. نظام النشر
+# 3. نظام النشر المتطور
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id): return
@@ -154,7 +145,8 @@ async def safe_send(client, messages, source_id):
     msg_date = main_msg.date.replace(tzinfo=timezone.utc)
     if END_DATE_LIMIT and msg_date > END_DATE_LIMIT: return
 
-    retail_text = build_text(main_msg.caption or main_msg.text, source_id, msg_date)
+    raw_caption = main_msg.caption or main_msg.text
+    retail_text = build_text(raw_caption, source_id, msg_date)
     if retail_text is None: return
     
     try:
@@ -166,31 +158,31 @@ async def safe_send(client, messages, source_id):
         
         if retail_text != "": 
             await client.send_message(RETAIL_CHANNEL, retail_text)
+            # الزيادة الحقيقية للعداد تحدث هنا فقط بعد نجاح الإرسال
+            if raw_caption:
+                increment_counter(source_id, msg_date.strftime("%d%m"))
         
-        mark_msg_as_processed(messages[0].id, source_id, msg_date.strftime("%d%m"))
+        mark_msg_as_processed(messages[0].id)
         await asyncio.sleep(3)
+    except FloodWait as e: await asyncio.sleep(e.value)
     except: pass
 
 async def fetch_history(client):
     for channel in SOURCE_CHANNELS:
-        all_items = []
-        processed_group_ids = set()
+        all_items, group_processed = [], set()
         async for msg in client.get_chat_history(channel, limit=300):
             m_date = msg.date.replace(tzinfo=timezone.utc)
             if m_date < START_DATE: break
             if (END_DATE_LIMIT and m_date > END_DATE_LIMIT) or is_msg_processed(msg.id): continue
             
             if msg.media_group_id:
-                if msg.media_group_id in processed_group_ids: continue
-                processed_group_ids.add(msg.media_group_id)
-                group = await client.get_media_group(channel, msg.id)
-                all_items.append(group)
-            else:
-                all_items.append([msg])
+                if msg.media_group_id in group_processed: continue
+                group_processed.add(msg.media_group_id)
+                all_items.append(await client.get_media_group(channel, msg.id))
+            else: all_items.append([msg])
 
         all_items.reverse()
-        for item in all_items:
-            await safe_send(client, item, channel)
+        for item in all_items: await safe_send(client, item, channel)
 
 # ==========================================
 # 4. تشغيل البوت
@@ -200,9 +192,11 @@ app = Client("retail_v21", api_id=API_ID, api_hash=API_HASH, session_string=SESS
 @app.on_message(filters.chat(SOURCE_CHANNELS))
 async def main_handler(client, message):
     if message.poll or is_msg_processed(message.id): return 
-    m_date = message.date.replace(tzinfo=timezone.utc)
-    if m_date < START_DATE or (END_DATE_LIMIT and m_date > END_DATE_LIMIT): return
+    
+    # حماية الألبومات من التكرار اللحظي
     if message.media_group_id:
+        if message.media_group_id in processed_media_groups: return
+        processed_media_groups.add(message.media_group_id)
         try:
             msgs = await client.get_media_group(message.chat.id, message.id)
             await safe_send(client, msgs, message.chat.id)
@@ -211,7 +205,7 @@ async def main_handler(client, message):
 
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Retail Pro Bot Active!"
+def home(): return "Retail Pro Bot v21.9 Active!"
 
 async def start_bot():
     await app.start()
