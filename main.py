@@ -25,7 +25,7 @@ BLOCK_KEYWORDS = [
     "مواعيد العمل يوميا", "الاحد اجازة", "فوادفون كاش", "انستا باي",
     "01289765424", "01272078072", "01505530190", "01012050836",
     "شركه PR", "شركة PR", "النزهه الجديده", "عبدالرحمن", "ريفيو", "وصلنا",
-    "تم استلام اكبر اكبر اكبر"   # ← يمنع هذا البوست
+    "تم استلام اكبر اكبر اكبر"
 ]
 
 P_CODE_TRANSLATION = {
@@ -112,14 +112,11 @@ def extract_real_price(text):
     return nums[-1] if nums else None
 
 def is_emoji_only(text):
-    """يعيد True إذا كان النص يحتوي فقط على إيموجي ومسافات/أسطر جديدة"""
     if not text or not text.strip():
         return False
-    # يزيل كل شيء إلا الإيموجي والمسافات البيضاء
     cleaned = re.sub(r'[\s\u200d]', '', text)
     if not cleaned:
         return False
-    # نمط يطابق الإيموجي (بسيط يغطي أغلب الرموز)
     emoji_pattern = re.compile(
         "[\U0001F300-\U0001F5FF"
         "\U0001F600-\U0001F64F"
@@ -138,7 +135,6 @@ def is_emoji_only(text):
         "\U0001F004"
         "\U0001F0CF"
         "]+", flags=re.UNICODE)
-    # يختبر إذا كان النص كله بعد إزالة الفراغات يتطابق مع الإيموجي
     return bool(emoji_pattern.fullmatch(cleaned))
 
 def build_text(original_text, source_id, msg_date, current_num):
@@ -151,6 +147,9 @@ def build_text(original_text, source_id, msg_date, current_num):
     # إذا كان النص إيموجي فقط، نرجع نصًا فارغًا (ليظهر الفيديو فقط بدون كابشن)
     if is_emoji_only(norm_text):
         return ""
+
+    # استبدال infinity بـ فاشونيستا
+    norm_text = re.sub(r'\binfinity\b', 'فاشونيستا', norm_text, flags=re.IGNORECASE)
 
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
@@ -218,7 +217,6 @@ async def safe_send(client, messages, source_id):
             elif m.animation: await client.send_animation(RETAIL_CHANNEL, m.animation.file_id)
             await asyncio.sleep(2)
 
-        # أرسل النص فقط إذا لم يكن فارغًا (الإيموجي فقط يعطي "" فلا يرسل نص)
         if retail_text != "":
             await client.send_message(RETAIL_CHANNEL, retail_text)
             if raw_caption:
@@ -284,7 +282,7 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v22.10 Ready!"
+    return "Retail Pro Bot v22.11 Ready!"
 
 async def start_bot():
     global channel_counters
