@@ -46,8 +46,11 @@ def load_counters():
 def save_counter(key, value):
     counters = load_counters()
     counters[key] = value
-    with open(COUNTERS_FILE, "w") as f:
+    # نكتب الملف بشكل آمن باستخدام ملف مؤقت
+    temp_file = COUNTERS_FILE + ".tmp"
+    with open(temp_file, "w") as f:
         json.dump(counters, f)
+    os.replace(temp_file, COUNTERS_FILE)
 
 def convert_to_arabic_numbers(text):
     if not text: return ""
@@ -145,7 +148,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     # فحص الكلمات الممنوعة & روابط التيك توك
     if any(word in norm_text for word in BLOCK_KEYWORDS): return None
 
-    # إذا كان النص إيموجي فقط، نرجع نصًا فارغًا (ليظهر الفيديو فقط بدون كابشن)
+    # إذا كان النص إيموجي فقط، نرجع نصًا فارغًا
     if is_emoji_only(norm_text):
         return ""
 
@@ -162,8 +165,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     code_match = re.search(r'([A-Z]+)\d+', normalize_numbers(original_text), re.IGNORECASE)
     original_code_prefix = code_match.group(1).upper() if code_match else ""
     
-    # ====== التعديل الأول: فحص النص الأصلي مباشرة ======
-    # نفحص إذا كان النص الأصلي (قبل أي تعديل) يحتوي على حروف عربية أو إنجليزية
     has_arabic_original = False
     for c in original_text:
         if ('\u0600' <= c <= '\u06FF') or c.isalpha():
@@ -177,19 +178,20 @@ def build_text(original_text, source_id, msg_date, current_num):
         if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار).*']): continue
         if re.search(r'(?:أونلاين|اونلاين|online)', line, re.IGNORECASE): continue
 
+        # حذف السعر بكل أشكاله: "بسعر ...", "قطعه ...", "ب 55 ج"
         line = re.sub(r'(?:السعر|سعر|price|بسعر|قطعه|قطعة|أونلاين|online|اقل من).*', '', line, flags=re.IGNORECASE).strip()
+        # حذف نمط "ب 55 ج" أو "ب55 ج"
+        line = re.sub(r'\s*ب\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
         line = re.sub(r'[:：]?\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
         
-        # ====== التعديل الثاني: إزالة بقايا الكلمات المقطوعة مثل "ال" ======
-        # إذا كان السطر بعد التنظيف يتكون من حرفين عربيين فقط أو أقل أو كلمة "ب" فقط
-        if line and len(line) <= 2 and not any(c.isascii() and c.isalpha() for c in line):
+        # إزالة السطر لو تبقى منه حروف قليلة جداً
+        if len(line) <= 3 and not any(c.isascii() and c.isalpha() for c in line):
             continue
             
         if line: cleaned_lines.append(line)
 
     description = "\n".join(cleaned_lines)
     
-    # ====== استخدام المتغير has_arabic_original بدلاً من فحص description ======
     if not has_arabic_original and original_code_prefix in P_CODE_TRANSLATION:
         item_name = P_CODE_TRANSLATION[original_code_prefix]
         description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
@@ -299,7 +301,7 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v22.13 Ready!"
+    return "Retail Pro Bot v22.14 Ready!"
 
 async def start_bot():
     global channel_counters
