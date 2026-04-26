@@ -55,9 +55,6 @@ SOURCE_CHANNELS = [int(ch) if ch.startswith("-") else ch for ch in raw_channels]
 
 RETAIL_MAPPING = { 15: 45, 20: 50, 25: 55, 30: 60, 35: 65, 40: 70, 45: 75, 50: 80, 55: 85, 60: 90, 65: 95, 70: 100, 75: 105, 80: 115, 85: 120, 90: 130, 95: 135, 100: 140, 105: 150, 110: 155, 115: 165, 120: 170, 125: 175, 130: 185, 135: 190, 140: 200, 145: 205, 150: 210, 155: 220, 160: 225, 165: 235, 170: 240, 175: 245, 180: 255, 185: 260, 190: 270, 195: 275, 200: 280, 205: 290, 210: 295, 215: 305, 220: 310, 225: 315, 230: 325, 235: 330, 240: 340, 245: 345, 250: 350, 255: 360, 260: 365, 265: 375, 270: 380, 275: 385, 280: 395, 285: 400, 290: 410, 295: 415, 300: 420, 305: 430, 310: 435, 315: 445, 320: 450, 325: 455, 330: 465, 335: 470, 340: 480, 345: 485, 350: 490, 355: 500, 360: 505, 365: 515, 370: 520, 375: 525, 380: 535, 385: 540, 390: 550, 395: 555, 400: 560, 405: 570, 410: 575, 415: 585, 420: 590, 425: 595, 430: 605, 435: 610, 440: 620, 445: 625, 450: 630, 455: 640, 460: 645, 465: 655, 470: 660, 475: 665, 480: 675, 485: 680, 490: 690, 495: 695, 500: 700, 505: 710, 510: 715, 515: 725, 520: 730, 525: 735, 530: 745, 535: 750, 540: 760, 545: 765, 550: 770, 555: 780, 560: 785, 565: 795, 570: 800, 575: 805, 580: 815, 585: 820, 590: 830, 595: 835, 600: 840, 605: 850, 610: 855, 615: 865, 620: 870, 625: 875, 630: 885, 635: 890, 640: 900, 645: 905, 650: 910, 655: 920, 660: 925, 665: 935, 670: 940, 675: 945, 680: 955, 685: 960, 690: 970, 695: 975, 700: 980, 705: 990, 710: 995, 715: 1005, 720: 1010, 725: 1015, 730: 1025, 735: 1030, 740: 1040, 745: 1045, 750: 1050, 755: 1060, 760: 1065, 765: 1075, 770: 1080, 775: 1085, 780: 1095, 785: 1100, 790: 1110, 795: 1115, 800: 1120, 805: 1130, 810: 1135, 815: 1145, 820: 1150, 825: 1155, 830: 1165, 835: 1170, 840: 1180, 845: 1185, 850: 1190, 855: 1200, 860: 1205, 865: 1215, 870: 1220, 875: 1225, 880: 1235, 885: 1240, 890: 1250, 895: 1255, 900: 1260, 905: 1270, 910: 1275, 915: 1285, 920: 1290, 925: 1295, 930: 1305, 935: 1310, 940: 1320, 945: 1325, 950: 1330, 955: 1340, 960: 1345, 965: 1355, 970: 1360, 975: 1365, 980: 1375, 985: 1380, 990: 1390, 995: 1395, 1000: 1400 }
 
-# ==========================================
-# 2. المساعدات
-# ==========================================
 channel_counters = {}
 SUPPLIER_PREFIX_MAP = {"aymanelawamy123": "A", "sasaaccessories": "S", "ayselstore55": "AS", "miyokowatches22": "M", -1001132261086: "P", -1001448553593: "I", -1001682055192: "H"}
 
@@ -93,16 +90,12 @@ def build_text(original_text, source_id, msg_date):
     if not original_text: return ""
     norm_text = normalize_numbers(original_text)
     if any(word in norm_text for word in BLOCK_KEYWORDS): return None
-    for word in WORDS_TO_REMOVE:
-        norm_text = re.sub(word, '', norm_text, flags=re.IGNORECASE)
-
+    for word in WORDS_TO_REMOVE: norm_text = re.sub(word, '', norm_text, flags=re.IGNORECASE)
     found_price_val = extract_real_price(original_text)
     final_price_val = RETAIL_MAPPING.get(found_price_val, "")
     price_str_ar = convert_to_arabic_numbers(final_price_val)
-    
     code_match = re.search(r'([A-Z]+)\d+', normalize_numbers(original_text), re.IGNORECASE)
     original_code_prefix = code_match.group(1).upper() if code_match else ""
-
     cleaned_lines = []
     for line in norm_text.split('\n'):
         line = line.strip()
@@ -111,18 +104,13 @@ def build_text(original_text, source_id, msg_date):
         line = re.sub(r'(?:السعر|سعر|price|بسعر|قطعه|قطعة|أونلاين|online|اقل من).*', '', line, flags=re.IGNORECASE).strip()
         line = re.sub(r'[:：]?\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
         if line: cleaned_lines.append(line)
-
     description = "\n".join(cleaned_lines)
     if not any(c.isalpha() or '\u0600' <= c <= '\u06FF' for c in description) and original_code_prefix in P_CODE_TRANSLATION:
         item_name = P_CODE_TRANSLATION[original_code_prefix]
         description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
-
     my_code = generate_my_code(source_id, msg_date)
     return f"{description}\n\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_str_ar} ج 🔥"
 
-# ==========================================
-# 3. نظام النشر
-# ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id): return
     valid_messages = [m for m in messages if not m.poll]
@@ -130,7 +118,6 @@ async def safe_send(client, messages, source_id):
     main_msg = next((m for m in valid_messages if (m.caption or m.text)), valid_messages[0])
     msg_date = main_msg.date.replace(tzinfo=timezone.utc)
     if END_DATE_LIMIT and msg_date > END_DATE_LIMIT: return
-
     retail_text = build_text(main_msg.caption or main_msg.text, source_id, msg_date)
     if retail_text is None: return
     try:
@@ -143,20 +130,23 @@ async def safe_send(client, messages, source_id):
             await client.send_message(RETAIL_CHANNEL, retail_text)
             mark_msg_as_processed(messages[0].id, source_id, msg_date.strftime("%d%m"))
         await asyncio.sleep(3)
-    except Exception as e: print(f"❌ [SafeSend] Error: {e}")
+    except: pass
 
 async def fetch_history(client):
-    print(f"🚀 [History] Scanning: {START_DATE} to {END_DATE_LIMIT}")
+    print(f"🚀 [History] Full Scan mode: Looking for {START_DATE.strftime('%Y-%m-%d')}")
     for channel in SOURCE_CHANNELS:
-        print(f"📡 [History] Checking channel: {channel}")
+        print(f"📡 [History] Digging deep into: {channel}")
         all_items, group_processed = [], set()
-        # رفع الحد لـ 2000 رسالة لضمان الوصول للتواريخ القديمة
-        async for msg in client.get_chat_history(channel, limit=2000):
+        count = 0
+        async for msg in client.get_chat_history(channel, limit=5000): # رفع الحد لـ 5000
             m_date = msg.date.replace(tzinfo=timezone.utc)
-            # طباعة تشخيصية لليوم الذي يتم فحصه حالياً
-            if msg.id % 50 == 0: print(f"🔍 [Scanning] Channel {channel} at date: {m_date.strftime('%Y-%m-%d')}")
+            count += 1
+            if count % 50 == 0: print(f"⏳ [DeepScan] {channel}: Reached {m_date.strftime('%Y-%m-%d')} (Msg ID: {msg.id})")
             
-            if m_date < START_DATE: break
+            if m_date < START_DATE: 
+                print(f"✅ [History] START_DATE reached for {channel}. Stopping scan.")
+                break
+            
             if (END_DATE_LIMIT and m_date > END_DATE_LIMIT) or is_msg_processed(msg.id): continue
             
             if msg.media_group_id:
@@ -166,12 +156,10 @@ async def fetch_history(client):
             else: all_items.append([msg])
         
         all_items.reverse()
+        print(f"📦 [History] Found {len(all_items)} valid posts. Starting delivery...")
         for item in all_items: await safe_send(client, item, channel)
-    print("✅ [History] Finished.")
+    print("🏁 [History] Scan complete.")
 
-# ==========================================
-# 4. تشغيل البوت
-# ==========================================
 app = Client("retail_v22", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
 
 @app.on_message(filters.chat(SOURCE_CHANNELS))
@@ -188,7 +176,7 @@ async def main_handler(client, message):
 
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Retail Pro Bot v22.2 Active!"
+def home(): return "Retail Pro Bot v22.3 Active!"
 
 async def start_bot():
     await app.start()
