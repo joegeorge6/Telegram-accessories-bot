@@ -179,6 +179,10 @@ def build_text(original_text, source_id, msg_date, current_num):
         line = re.sub(r'\s*ب\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
         line = re.sub(r'[:：]?\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
         
+        # لو السطر بقى كلمة واحدة فقط بعد حذف السعر، نحذفه
+        if line and len(line.split()) == 1 and not any(c.isascii() and c.isalpha() for c in line):
+            continue
+            
         if len(line) <= 3 and not any(c.isascii() and c.isalpha() for c in line):
             continue
             
@@ -273,7 +277,6 @@ async def fetch_history(client):
 # ==========================================
 # 4. تشغيل البوت
 # ==========================================
-# استخدام اسم جلسة فريد كل مرة لتجنب التصادم
 SESSION_NAME = f"retail_{int(time.time())}"
 app = Client(SESSION_NAME, api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
 
@@ -297,12 +300,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v22.15 Ready!"
+    return "Retail Pro Bot v22.16 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    await asyncio.sleep(3)  # انتظار 3 ثواني لضمان إغلاق الجلسات القديمة
+    await asyncio.sleep(3)
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
