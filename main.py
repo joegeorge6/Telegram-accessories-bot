@@ -2,6 +2,7 @@ import os
 import re
 import asyncio
 import json
+import time
 from datetime import datetime, timezone
 from pyrogram import Client, filters, idle
 from pyrogram.errors import FloodWait
@@ -46,7 +47,6 @@ def load_counters():
 def save_counter(key, value):
     counters = load_counters()
     counters[key] = value
-    # نكتب الملف بشكل آمن باستخدام ملف مؤقت
     temp_file = COUNTERS_FILE + ".tmp"
     with open(temp_file, "w") as f:
         json.dump(counters, f)
@@ -145,14 +145,11 @@ def build_text(original_text, source_id, msg_date, current_num):
     if not original_text: return ""
     norm_text = normalize_numbers(original_text)
 
-    # فحص الكلمات الممنوعة & روابط التيك توك
     if any(word in norm_text for word in BLOCK_KEYWORDS): return None
 
-    # إذا كان النص إيموجي فقط، نرجع نصًا فارغًا
     if is_emoji_only(norm_text):
         return ""
 
-    # استبدال infinity بـ فاشونيستا
     norm_text = re.sub(r'\binfinity\b', 'فاشونيستا', norm_text, flags=re.IGNORECASE)
 
     for word in WORDS_TO_REMOVE:
@@ -178,13 +175,10 @@ def build_text(original_text, source_id, msg_date, current_num):
         if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار).*']): continue
         if re.search(r'(?:أونلاين|اونلاين|online)', line, re.IGNORECASE): continue
 
-        # حذف السعر بكل أشكاله: "بسعر ...", "قطعه ...", "ب 55 ج"
         line = re.sub(r'(?:السعر|سعر|price|بسعر|قطعه|قطعة|أونلاين|online|اقل من).*', '', line, flags=re.IGNORECASE).strip()
-        # حذف نمط "ب 55 ج" أو "ب55 ج"
         line = re.sub(r'\s*ب\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
         line = re.sub(r'[:：]?\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
         
-        # إزالة السطر لو تبقى منه حروف قليلة جداً
         if len(line) <= 3 and not any(c.isascii() and c.isalpha() for c in line):
             continue
             
@@ -279,7 +273,9 @@ async def fetch_history(client):
 # ==========================================
 # 4. تشغيل البوت
 # ==========================================
-app = Client("retail_v22", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
+# استخدام اسم جلسة فريد كل مرة لتجنب التصادم
+SESSION_NAME = f"retail_{int(time.time())}"
+app = Client(SESSION_NAME, api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
 
 @app.on_message(filters.chat(SOURCE_CHANNELS))
 async def main_handler(client, message):
@@ -301,11 +297,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v22.14 Ready!"
+    return "Retail Pro Bot v22.15 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
+    await asyncio.sleep(3)  # انتظار 3 ثواني لضمان إغلاق الجلسات القديمة
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
@@ -313,4 +310,13 @@ async def start_bot():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     Thread(target=lambda: web_app.run(host="0.0.0.0", port=port)).start()
-    app.run(start_bot())
+    
+    try:
+        app.run(start_bot())
+    except Exception as e:
+        print(f"❌ فشل التشغيل الأول: {e}")
+        time.sleep(10)
+        try:
+            app.run(start_bot())
+        except:
+            print("❌ فشل نهائي، تحتاج SESSION_STRING جديد")
