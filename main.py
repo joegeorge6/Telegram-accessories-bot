@@ -24,7 +24,8 @@ BLOCK_KEYWORDS = [
     "الرسالة المثبته", "نظام التعامل", "بتجمع / ي اوردورك", "قفل فاتورة",
     "مواعيد العمل يوميا", "الاحد اجازة", "فوادفون كاش", "انستا باي",
     "01289765424", "01272078072", "01505530190", "01012050836",
-    "شركه PR", "شركة PR", "النزهه الجديده", "عبدالرحمن", "ريفيو", "وصلنا"
+    "شركه PR", "شركة PR", "النزهه الجديده", "عبدالرحمن", "ريفيو", "وصلنا",
+    "تم استلام اكبر اكبر اكبر"   # ← يمنع هذا البوست
 ]
 
 P_CODE_TRANSLATION = {
@@ -81,7 +82,6 @@ channel_counters = load_counters()
 SUPPLIER_PREFIX_MAP = {"aymanelawamy123": "A", "sasaaccessories": "S", "ayselstore55": "AS", "miyokowatches22": "M", -1001132261086: "P", -1001448553593: "I", -1001682055192: "H"}
 
 def is_screenshot(photo):
-    """تكتشف إذا كانت الصورة سكرين شوت (نسبة الطول للعرض > 1.8)"""
     if not photo:
         return False
     try:
@@ -111,11 +111,46 @@ def extract_real_price(text):
     nums = [int(n) for n in re.findall(r'(\d+)', clean_for_search) if 15 <= int(n) <= 2000]
     return nums[-1] if nums else None
 
+def is_emoji_only(text):
+    """يعيد True إذا كان النص يحتوي فقط على إيموجي ومسافات/أسطر جديدة"""
+    if not text or not text.strip():
+        return False
+    # يزيل كل شيء إلا الإيموجي والمسافات البيضاء
+    cleaned = re.sub(r'[\s\u200d]', '', text)
+    if not cleaned:
+        return False
+    # نمط يطابق الإيموجي (بسيط يغطي أغلب الرموز)
+    emoji_pattern = re.compile(
+        "[\U0001F300-\U0001F5FF"
+        "\U0001F600-\U0001F64F"
+        "\U0001F680-\U0001F6FF"
+        "\U0001F1E0-\U0001F1FF"
+        "\U00002702-\U000027B0"
+        "\U000024C2-\U0001F251"
+        "\U0001F900-\U0001F9FF"
+        "\U0001FA00-\U0001FA6F"
+        "\U0001FA70-\U0001FAFF"
+        "\U00002600-\U000026FF"
+        "\U0000FE00-\U0000FE0F"
+        "\U0000200D"
+        "\U00002B50"
+        "\U00002764"
+        "\U0001F004"
+        "\U0001F0CF"
+        "]+", flags=re.UNICODE)
+    # يختبر إذا كان النص كله بعد إزالة الفراغات يتطابق مع الإيموجي
+    return bool(emoji_pattern.fullmatch(cleaned))
+
 def build_text(original_text, source_id, msg_date, current_num):
     if not original_text: return ""
     norm_text = normalize_numbers(original_text)
 
+    # فحص الكلمات الممنوعة
     if any(word in norm_text for word in BLOCK_KEYWORDS): return None
+
+    # إذا كان النص إيموجي فقط، نرجع نصًا فارغًا (ليظهر الفيديو فقط بدون كابشن)
+    if is_emoji_only(norm_text):
+        return ""
 
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
@@ -155,7 +190,6 @@ async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
         return
 
-    # فلترة السكرين شوت بالإضافة إلى الاستفتاءات
     valid_messages = [m for m in messages if not m.poll and not (m.photo and is_screenshot(m.photo))]
     if not valid_messages:
         return
@@ -184,6 +218,7 @@ async def safe_send(client, messages, source_id):
             elif m.animation: await client.send_animation(RETAIL_CHANNEL, m.animation.file_id)
             await asyncio.sleep(2)
 
+        # أرسل النص فقط إذا لم يكن فارغًا (الإيموجي فقط يعطي "" فلا يرسل نص)
         if retail_text != "":
             await client.send_message(RETAIL_CHANNEL, retail_text)
             if raw_caption:
@@ -231,7 +266,6 @@ app = Client("retail_v22", api_id=API_ID, api_hash=API_HASH, session_string=SESS
 
 @app.on_message(filters.chat(SOURCE_CHANNELS))
 async def main_handler(client, message):
-    # التحقق من السكرين شوت هنا أيضاً (للرسائل المفردة)
     if message.photo and is_screenshot(message.photo):
         return
     if message.poll or is_msg_processed(message.id, message.chat.id):
@@ -250,7 +284,7 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v22.9 Ready!"
+    return "Retail Pro Bot v22.10 Ready!"
 
 async def start_bot():
     global channel_counters
