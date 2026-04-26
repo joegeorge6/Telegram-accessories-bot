@@ -25,7 +25,8 @@ BLOCK_KEYWORDS = [
     "مواعيد العمل يوميا", "الاحد اجازة", "فوادفون كاش", "انستا باي",
     "01289765424", "01272078072", "01505530190", "01012050836",
     "شركه PR", "شركة PR", "النزهه الجديده", "عبدالرحمن", "ريفيو", "وصلنا",
-    "تم استلام اكبر اكبر اكبر"
+    "تم استلام اكبر اكبر اكبر",
+    "tiktok.com"  # يمنع أي رابط تيك توك (عادي أو مختصر)
 ]
 
 P_CODE_TRANSLATION = {
@@ -141,7 +142,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     if not original_text: return ""
     norm_text = normalize_numbers(original_text)
 
-    # فحص الكلمات الممنوعة
+    # فحص الكلمات الممنوعة & روابط التيك توك
     if any(word in norm_text for word in BLOCK_KEYWORDS): return None
 
     # إذا كان النص إيموجي فقط، نرجع نصًا فارغًا (ليظهر الفيديو فقط بدون كابشن)
@@ -282,7 +283,7 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v22.11 Ready!"
+    return "Retail Pro Bot v22.12 Ready!"
 
 async def start_bot():
     global channel_counters
