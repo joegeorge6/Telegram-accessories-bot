@@ -80,6 +80,16 @@ RETAIL_MAPPING = { 15: 45, 20: 50, 25: 55, 30: 60, 35: 65, 40: 70, 45: 75, 50: 8
 channel_counters = load_counters()
 SUPPLIER_PREFIX_MAP = {"aymanelawamy123": "A", "sasaaccessories": "S", "ayselstore55": "AS", "miyokowatches22": "M", -1001132261086: "P", -1001448553593: "I", -1001682055192: "H"}
 
+def is_screenshot(photo):
+    """تكتشف إذا كانت الصورة سكرين شوت (نسبة الطول للعرض > 1.8)"""
+    if not photo:
+        return False
+    try:
+        ratio = photo.height / photo.width
+        return ratio > 1.8
+    except:
+        return False
+
 def is_msg_processed(msg_id, source_id):
     if not os.path.exists(DB_FILE): return False
     search_key = f"{source_id}:{msg_id}"
@@ -144,7 +154,9 @@ def build_text(original_text, source_id, msg_date, current_num):
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
         return
-    valid_messages = [m for m in messages if not m.poll]
+
+    # فلترة السكرين شوت بالإضافة إلى الاستفتاءات
+    valid_messages = [m for m in messages if not m.poll and not (m.photo and is_screenshot(m.photo))]
     if not valid_messages:
         return
 
@@ -219,6 +231,9 @@ app = Client("retail_v22", api_id=API_ID, api_hash=API_HASH, session_string=SESS
 
 @app.on_message(filters.chat(SOURCE_CHANNELS))
 async def main_handler(client, message):
+    # التحقق من السكرين شوت هنا أيضاً (للرسائل المفردة)
+    if message.photo and is_screenshot(message.photo):
+        return
     if message.poll or is_msg_processed(message.id, message.chat.id):
         return
     m_date = message.date.replace(tzinfo=timezone.utc)
