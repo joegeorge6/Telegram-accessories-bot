@@ -27,7 +27,8 @@ BLOCK_KEYWORDS = [
     "01289765424", "01272078072", "01505530190", "01012050836",
     "شركه PR", "شركة PR", "النزهه الجديده", "عبدالرحمن", "ريفيو", "وصلنا",
     "تم استلام اكبر اكبر اكبر",
-    "tiktok.com"
+    "tiktok.com",
+    "تم غلق الحجز"  # ← منع رسالة إغلاق المحل
 ]
 
 P_CODE_TRANSLATION = {
@@ -109,7 +110,6 @@ def extract_real_price(text):
     norm_text = normalize_numbers(text)
     clean_for_search = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر|شكل|لون|ق)', '', norm_text, flags=re.IGNORECASE)
     
-    # البحث عن سعر الكارت كله أولاً (أولوية)
     cart_match = re.search(r'(?:الكارت كله|الكارت)\s*[ب]\s*(\d+)', clean_for_search, re.IGNORECASE)
     if cart_match: return int(cart_match.group(1))
     
@@ -178,7 +178,6 @@ def build_text(original_text, source_id, msg_date, current_num):
         line = line.strip()
         if not line or re.match(r'^[A-Z]+\d+.*$', line, re.IGNORECASE): continue
         
-        # حذف السطر الذي يحتوي على "كارت" + "ب" + رقم + "ج" فقط
         if re.search(r'(?:الكارت|كارت).*ب\s*\d+\s*ج', line, re.IGNORECASE): continue
         
         if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار).*']): continue
@@ -188,7 +187,6 @@ def build_text(original_text, source_id, msg_date, current_num):
         line = re.sub(r'\s*ب\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
         line = re.sub(r'[:：]?\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
         
-        # لو السطر بقى كلمة واحدة فقط بعد حذف السعر، نحذفه
         if line and len(line.split()) == 1 and not any(c.isascii() and c.isalpha() for c in line):
             continue
             
@@ -309,7 +307,7 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v22.18 Ready!"
+    return "Retail Pro Bot v22.20 Ready!"
 
 async def start_bot():
     global channel_counters
