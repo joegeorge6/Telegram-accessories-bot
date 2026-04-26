@@ -178,8 +178,8 @@ def build_text(original_text, source_id, msg_date, current_num):
         line = line.strip()
         if not line or re.match(r'^[A-Z]+\d+.*$', line, re.IGNORECASE): continue
         
-        # حذف أي سطر فيه كلمة "الكارت" أو "كارت"
-        if re.search(r'(?:الكارت|كارت)', line, re.IGNORECASE): continue
+        # حذف السطر الذي يحتوي على "كارت" + "ب" + رقم + "ج" فقط
+        if re.search(r'(?:الكارت|كارت).*ب\s*\d+\s*ج', line, re.IGNORECASE): continue
         
         if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار).*']): continue
         if re.search(r'(?:أونلاين|اونلاين|online)', line, re.IGNORECASE): continue
@@ -309,7 +309,7 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v22.17 Ready!"
+    return "Retail Pro Bot v22.18 Ready!"
 
 async def start_bot():
     global channel_counters
