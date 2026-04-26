@@ -17,9 +17,7 @@ SESSION_STRING = os.environ.get("SESSION_STRING", "")
 RETAIL_CHANNEL = "@girlsfashionesta"
 DB_FILE = "processed_msgs.txt"
 
-# الكلمات التي سيتم "حذفها" من النص بدلاً من حظر البوست
 WORDS_TO_REMOVE = ["SASA", "sasa", "PRIBORE", "Women Accessoreis", "Women Accessories"]
-# الكلمات التي لو وجدت "يُحظر" البوست بالكامل (إعلانات/ريفيوهات)
 BLOCK_KEYWORDS = ["شركه PR", "شركة PR", "النزهه الجديده", "01012050836", "عبدالرحمن", "01505530190", "ريفيو", "وصلنا"]
 
 P_CODE_TRANSLATION = {
@@ -78,7 +76,6 @@ def generate_my_code(source_id, msg_date):
     counter_key = f"{source_id}_{today_str}"
     current_num = channel_counters.get(counter_key, 0) + 1
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
-    if isinstance(source_id, int): prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     return f"{prefix}{current_num:02d}{today_str}"
 
 def extract_real_price(text):
@@ -95,13 +92,7 @@ def extract_real_price(text):
 def build_text(original_text, source_id, msg_date):
     if not original_text: return ""
     norm_text = normalize_numbers(original_text)
-    
-    # حظر البوست لو فيه كلمات إعلانية صريحة
-    if any(word in norm_text for word in BLOCK_KEYWORDS):
-        print(f"🚫 [Build] Blocked due to keyword in text.")
-        return None
-
-    # تنظيف كلمات البراند (SASA/PRIBORE) من الوصف
+    if any(word in norm_text for word in BLOCK_KEYWORDS): return None
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(word, '', norm_text, flags=re.IGNORECASE)
 
@@ -136,46 +127,47 @@ async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id): return
     valid_messages = [m for m in messages if not m.poll]
     if not valid_messages: return
-    
     main_msg = next((m for m in valid_messages if (m.caption or m.text)), valid_messages[0])
     msg_date = main_msg.date.replace(tzinfo=timezone.utc)
     if END_DATE_LIMIT and msg_date > END_DATE_LIMIT: return
 
     retail_text = build_text(main_msg.caption or main_msg.text, source_id, msg_date)
     if retail_text is None: return
-    
     try:
-        print(f"📤 [SafeSend] Sending ID {messages[0].id}...")
         for m in valid_messages:
             if m.photo: await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
             elif m.video: await client.send_video(RETAIL_CHANNEL, m.video.file_id)
             elif m.animation: await client.send_animation(RETAIL_CHANNEL, m.animation.file_id)
             await asyncio.sleep(2) 
-        
         if retail_text != "": 
             await client.send_message(RETAIL_CHANNEL, retail_text)
             mark_msg_as_processed(messages[0].id, source_id, msg_date.strftime("%d%m"))
         await asyncio.sleep(3)
-    except Exception as e:
-        print(f"❌ [SafeSend] Error: {e}")
+    except Exception as e: print(f"❌ [SafeSend] Error: {e}")
 
 async def fetch_history(client):
     print(f"🚀 [History] Scanning: {START_DATE} to {END_DATE_LIMIT}")
     for channel in SOURCE_CHANNELS:
         print(f"📡 [History] Checking channel: {channel}")
         all_items, group_processed = [], set()
-        async for msg in client.get_chat_history(channel, limit=300):
+        # رفع الحد لـ 2000 رسالة لضمان الوصول للتواريخ القديمة
+        async for msg in client.get_chat_history(channel, limit=2000):
             m_date = msg.date.replace(tzinfo=timezone.utc)
+            # طباعة تشخيصية لليوم الذي يتم فحصه حالياً
+            if msg.id % 50 == 0: print(f"🔍 [Scanning] Channel {channel} at date: {m_date.strftime('%Y-%m-%d')}")
+            
             if m_date < START_DATE: break
             if (END_DATE_LIMIT and m_date > END_DATE_LIMIT) or is_msg_processed(msg.id): continue
+            
             if msg.media_group_id:
                 if msg.media_group_id in group_processed: continue
                 group_processed.add(msg.media_group_id)
                 all_items.append(await client.get_media_group(channel, msg.id))
             else: all_items.append([msg])
+        
         all_items.reverse()
         for item in all_items: await safe_send(client, item, channel)
-    print("✅ [History] Scan complete.")
+    print("✅ [History] Finished.")
 
 # ==========================================
 # 4. تشغيل البوت
@@ -196,7 +188,7 @@ async def main_handler(client, message):
 
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Retail Pro Bot v22.1 Active!"
+def home(): return "Retail Pro Bot v22.2 Active!"
 
 async def start_bot():
     await app.start()
