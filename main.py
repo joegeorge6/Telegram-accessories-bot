@@ -108,6 +108,11 @@ def extract_real_price(text):
     if not text: return None
     norm_text = normalize_numbers(text)
     clean_for_search = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر|شكل|لون|ق)', '', norm_text, flags=re.IGNORECASE)
+    
+    # البحث عن سعر الكارت كله أولاً (أولوية)
+    cart_match = re.search(r'(?:الكارت كله|الكارت)\s*[ب]\s*(\d+)', clean_for_search, re.IGNORECASE)
+    if cart_match: return int(cart_match.group(1))
+    
     price_match = re.search(r'(?:أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match: return int(price_match.group(1))
     wholesale_match = re.search(r'(?:الجمله|الجملة|جمله|جملة)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
@@ -172,6 +177,10 @@ def build_text(original_text, source_id, msg_date, current_num):
     for line in norm_text.split('\n'):
         line = line.strip()
         if not line or re.match(r'^[A-Z]+\d+.*$', line, re.IGNORECASE): continue
+        
+        # حذف أي سطر فيه كلمة "الكارت" أو "كارت"
+        if re.search(r'(?:الكارت|كارت)', line, re.IGNORECASE): continue
+        
         if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار).*']): continue
         if re.search(r'(?:أونلاين|اونلاين|online)', line, re.IGNORECASE): continue
 
@@ -300,7 +309,7 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v22.16 Ready!"
+    return "Retail Pro Bot v22.17 Ready!"
 
 async def start_bot():
     global channel_counters
