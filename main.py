@@ -28,7 +28,7 @@ BLOCK_KEYWORDS = [
     "شركه PR", "شركة PR", "النزهه الجديده", "عبدالرحمن", "ريفيو", "وصلنا",
     "تم استلام اكبر اكبر اكبر",
     "tiktok.com",
-    "تم غلق الحجز"  # ← منع رسالة إغلاق المحل
+    "تم غلق الحجز"
 ]
 
 P_CODE_TRANSLATION = {
@@ -307,12 +307,20 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v22.20 Ready!"
+    return "Retail Pro Bot v22.21 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    await asyncio.sleep(3)
+    
+    # ====== الحل الجذري: إغلاق أي جلسة قديمة أولاً ======
+    try:
+        await app.stop()  # إغلاق الجلسة لو كانت مفتوحة
+    except:
+        pass
+    await asyncio.sleep(5)  # انتظار 5 ثواني لتأكيد الإغلاق
+    
+    # الآن نبدأ من جديد
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
@@ -324,9 +332,5 @@ if __name__ == "__main__":
     try:
         app.run(start_bot())
     except Exception as e:
-        print(f"❌ فشل التشغيل الأول: {e}")
-        time.sleep(10)
-        try:
-            app.run(start_bot())
-        except:
-            print("❌ فشل نهائي، تحتاج SESSION_STRING جديد")
+        print(f"❌ فشل التشغيل: {e}")
+        # لو فشل، نحتاج نغير SESSION_STRING
