@@ -88,7 +88,7 @@ def is_screenshot(photo):
     if not photo: return False
     try:
         ratio = photo.height / photo.width
-        return ratio > 1.8
+        return ratio > 1.4
     except:
         return False
 
@@ -115,7 +115,6 @@ def extract_real_price(text):
     if cart_match:
         return int(cart_match.group(1))
 
-    # ✨ تم إضافة الصيغ المعرفتين لـ "اونلاين" لالتقاط "الاونلاين" و "الأونلاين"
     price_match = re.search(r'(?:الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match:
         return int(price_match.group(1))
@@ -163,6 +162,11 @@ def is_number_emoji_line(line):
 
 def build_text(original_text, source_id, msg_date, current_num):
     if not original_text: return ""
+    
+    # ✅ منع نسخ نص HEMA STORE مع إبقاء الوسائط (فيديو/صورة)
+    if re.search(r'HEMA\s*STORE', original_text, re.IGNORECASE):
+        return ""
+    
     norm_text = normalize_numbers(original_text)
 
     if any(word in norm_text for word in BLOCK_KEYWORDS): return None
