@@ -12,7 +12,7 @@ from threading import Thread
 # 1. الإعدادات الأساسية
 # ==========================================
 API_ID = int(os.environ.get("API_ID", "10182970"))
-API_HASH = os.environ.get("API_HASH", "0f4e456fc8101e8be8e0dad6aeb87041"))
+API_HASH = os.environ.get("API_HASH", "0f4e456fc8101e8be8e0dad6aeb87041")
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
 
 RETAIL_CHANNEL = "@girlsfashionesta"
@@ -203,7 +203,6 @@ def build_text(original_text, source_id, msg_date, current_num):
         if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
             continue
 
-        # حذف الرقم الافتتاحي إذا كان سعرًا (مثل "150 طقم CD...")
         if re.match(r'^(\d{2,4})\s+', line):
             num = int(re.match(r'^(\d{2,4})', line).group(1))
             if 15 <= num <= 2000:
