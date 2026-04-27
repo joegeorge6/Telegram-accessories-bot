@@ -25,7 +25,8 @@ BLOCK_KEYWORDS = [
     "مواعيد العمل يوميا", "الاحد اجازة", "فوادفون كاش", "انستا باي",
     "01289765424", "01272078072", "01505530190", "01012050836",
     "شركه PR", "شركة PR", "النزهه الجديده", "عبدالرحمن", "ريفيو", "وصلنا",
-    "تم استلام اكبر اكبر اكبر", "tiktok.com", "تم غلق الحجز"
+    "تم استلام اكبر اكبر اكبر", "tiktok.com", "تم غلق الحجز",
+    "صباح الرزق"  # ← منع رسالة صباح الرزق
 ]
 
 P_CODE_TRANSLATION = {
@@ -173,28 +174,24 @@ def build_text(original_text, source_id, msg_date, current_num):
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
 
-    # سنقوم بتجميع الأسعار المسماة (مثل سعر السلفر، سعر الجولد)
     labeled_prices = []
 
-    # استخراج الأسعار المسماة وحذف أسطرها من النص
-    # نمط: سعر + مسافة + اسم (حروف عربية/إنجليزية) + مسافة + رقم
     pattern_named_price = r'سعر\s+([\u0600-\u06FF\w]+)\s+(\d+)'
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
         match = re.search(pattern_named_price, line, re.IGNORECASE)
         if match:
-            label = match.group(1)      # مثل "السلفر" أو "الجولد"
+            label = match.group(1)
             price = int(match.group(2))
             retail_price = RETAIL_MAPPING.get(price, price)
             arabic_price = convert_to_arabic_numbers(retail_price)
             labeled_prices.append(f"{label} بسعر : 💰 {arabic_price} ج 🔥")
-            continue  # لا نضيف هذا السطر إلى الوصف
+            continue
         new_lines.append(line)
 
     norm_text = "\n".join(new_lines)
 
-    # الآن ننظف النص من أي أشياء أخرى (كروت، جملة، الخ)
     cleaned_lines = []
     for line in norm_text.split('\n'):
         line = line.strip()
@@ -203,7 +200,6 @@ def build_text(original_text, source_id, msg_date, current_num):
         if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار).*']): continue
         if re.search(r'(?:أونلاين|اونلاين|online)', line, re.IGNORECASE): continue
 
-        # حذف أي سطر يحتوي على "عرض" وليس "سعر" (للتأكد من إزالة "عرض خاص")
         if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
             continue
 
@@ -223,22 +219,18 @@ def build_text(original_text, source_id, msg_date, current_num):
 
     description = "\n".join(cleaned_lines)
 
-    # معالجة النصوص الفارغة التي تحتوي على كود منتج فقط
     if not any(c.isalpha() or '\u0600' <= c <= '\u06FF' for c in original_text) and original_code_prefix in P_CODE_TRANSLATION:
         item_name = P_CODE_TRANSLATION[original_code_prefix]
         description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
 
-    # توليد الكود
     today_str = msg_date.strftime("%d%m")
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     my_code = f"{prefix}{current_num:02d}{today_str}"
 
-    # بناء الناتج النهائي
     parts = [description, "", f"الكود : 🔖 {my_code}"]
     if labeled_prices:
         parts.extend(labeled_prices)
     else:
-        # إذا لم توجد أسعار مسماة، نستخدم السعر العام المستخرج من extract_real_price
         found_price_val = extract_real_price(original_text)
         final_price_val = RETAIL_MAPPING.get(found_price_val, "")
         price_str_ar = convert_to_arabic_numbers(final_price_val)
@@ -247,7 +239,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     return "\n".join(parts)
 
 # ==========================================
-# 3. نظام النشر (بدون تغيير)
+# 3. نظام النشر
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
