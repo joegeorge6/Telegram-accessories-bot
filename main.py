@@ -178,6 +178,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     norm_text = re.sub(r'\binfinity\b', 'فاشونيستا', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'(?:استالس|ستالس)', 'استانلس', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\bبلاتيد\b', 'بليتد', norm_text, flags=re.IGNORECASE)
+    norm_text = re.sub(r'\bزركون\b', 'زيركون', norm_text, flags=re.IGNORECASE)
 
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
