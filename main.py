@@ -180,19 +180,19 @@ def build_text(original_text, source_id, msg_date, current_num):
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
 
-    labeled_prices = []
-
-    pattern_named_price = r'سعر\s+([\u0600-\u06FF\w]+)\s+(\d+)'
+    # معالجة الأسعار المسماة: نحول "سعر الكوليه: 110" إلى "سعر الكوليه: طبقا لدالة السعر"
+    has_labeled_prices = False
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
-        match = re.search(pattern_named_price, line, re.IGNORECASE)
+        # تطابق نمط: سعر + مسافة + اسم + : + رقم
+        match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]\s*(\d+)', line, re.IGNORECASE)
         if match:
-            label = match.group(1)
-            price = int(match.group(2))
-            retail_price = RETAIL_MAPPING.get(price, price)
-            arabic_price = convert_to_arabic_numbers(retail_price)
-            labeled_prices.append(f"{label} بسعر : 💰 {arabic_price} ج 🔥")
+            label_part = match.group(1)  # "سعر الكوليه"
+            # نحتفظ بـ "سعر الكوليه: طبقا لدالة السعر"
+            new_line = f"{label_part}: طبقا لدالة السعر"
+            new_lines.append(new_line)
+            has_labeled_prices = True
             continue
         new_lines.append(line)
 
@@ -247,14 +247,16 @@ def build_text(original_text, source_id, msg_date, current_num):
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     my_code = f"{prefix}{current_num:02d}{today_str}"
 
+    # بناء الناتج النهائي
     parts = [description, "", f"الكود : 🔖 {my_code}"]
-    if labeled_prices:
-        parts.extend(labeled_prices)
-    else:
+    
+    if not has_labeled_prices:
+        # إذا لم يكن هناك أسعار مسماة، نضيف سطر السعر العام
         found_price_val = extract_real_price(original_text)
         final_price_val = RETAIL_MAPPING.get(found_price_val, "")
         price_str_ar = convert_to_arabic_numbers(final_price_val)
         parts.append(f"السعر : 💰 {price_str_ar} ج 🔥")
+    # إذا وجدت أسعار مسماة، لا نضيف شيء آخر
 
     return "\n".join(parts)
 
