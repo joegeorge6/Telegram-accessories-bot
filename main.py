@@ -115,7 +115,8 @@ def extract_real_price(text):
     if cart_match:
         return int(cart_match.group(1))
 
-    price_match = re.search(r'(?:أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
+    # ✨ تم إضافة الصيغ المعرفتين لـ "اونلاين" لالتقاط "الاونلاين" و "الأونلاين"
+    price_match = re.search(r'(?:الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match:
         return int(price_match.group(1))
 
@@ -201,6 +202,12 @@ def build_text(original_text, source_id, msg_date, current_num):
         if re.search(r'(?:أونلاين|اونلاين|online)', line, re.IGNORECASE): continue
 
         if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
+            continue
+
+        if re.search(r'(?:للحجز|طلب الاوردر|للطلب)', line, re.IGNORECASE):
+            continue
+
+        if re.search(r'\b01\d{9}\b', line):
             continue
 
         if re.match(r'^(\d{2,4})\s+', line):
