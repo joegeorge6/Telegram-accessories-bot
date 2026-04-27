@@ -185,6 +185,11 @@ def build_text(original_text, source_id, msg_date, current_num):
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
+        # تخطي الأسعار المسماة التي تحتوي على "جملة" أو "اونلاين" لتحكم القواعد القديمة بها
+        if re.search(r'(?:جملة|جمله|اونلاين|online)', line, re.IGNORECASE):
+            new_lines.append(line)
+            continue
+
         # يطابق "سعر الكوليه: 110" أو "سعر الاسورة:60"
         match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]\s*(\d+)', line, re.IGNORECASE)
         if match:
