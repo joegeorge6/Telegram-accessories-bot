@@ -2,6 +2,7 @@ import os
 import re
 import asyncio
 import json
+import traceback
 from datetime import datetime, timezone
 from pyrogram import Client, filters, idle
 from pyrogram.errors import FloodWait
@@ -163,7 +164,6 @@ def is_number_emoji_line(line):
 def build_text(original_text, source_id, msg_date, current_num):
     if not original_text: return ""
     
-    # ✅ منع نسخ نص HEMA STORE مع إبقاء الوسائط (فيديو/صورة)
     if re.search(r'HEMA\s*STORE', original_text, re.IGNORECASE):
         return ""
     
@@ -367,6 +367,14 @@ async def start_bot():
     await idle()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    Thread(target=lambda: web_app.run(host="0.0.0.0", port=port)).start()
-    app.run(start_bot())
+    try:
+        print("🚀 بدء التطبيق...")
+        port = int(os.environ.get("PORT", 8000))
+        Thread(target=lambda: web_app.run(host="0.0.0.0", port=port, debug=False)).start()
+        app.run(start_bot())
+    except Exception as e:
+        print(f"💥 فشل بدء التشغيل: {e}")
+        traceback.print_exc()
+        while True:
+            import time as _time
+            _time.sleep(3600)
