@@ -176,6 +176,8 @@ def build_text(original_text, source_id, msg_date, current_num):
         return ""
 
     norm_text = re.sub(r'\binfinity\b', 'فاشونيستا', norm_text, flags=re.IGNORECASE)
+    # استبدال استالس أو ستالس بـ استانلس
+    norm_text = re.sub(r'(?:استالس|ستالس)', 'استانلس', norm_text, flags=re.IGNORECASE)
 
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
@@ -258,10 +260,8 @@ def build_text(original_text, source_id, msg_date, current_num):
     parts = [description, "", f"الكود : 🔖 {my_code}"]
     
     if labeled_prices:
-        # إضافة الأسعار المسماة بعد الكود
         parts.extend(labeled_prices)
     else:
-        # لا توجد أسعار مسماة: نضيف السعر العام
         found_price_val = extract_real_price(original_text)
         final_price_val = RETAIL_MAPPING.get(found_price_val, "")
         price_str_ar = convert_to_arabic_numbers(final_price_val)
