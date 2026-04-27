@@ -180,8 +180,8 @@ def build_text(original_text, source_id, msg_date, current_num):
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
 
-    # 🟢 معالجة الأسعار المسماة وتحويلها عبر RETAIL_MAPPING
-    has_labeled_prices = False
+    # قائمة لتخزين الأسعار المسماة بعد تحويلها
+    labeled_prices = []
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
@@ -192,10 +192,9 @@ def build_text(original_text, source_id, msg_date, current_num):
             price = int(match.group(2))         # مثال: 110
             retail_price = RETAIL_MAPPING.get(price, price)  # 110 -> 155
             arabic_price = convert_to_arabic_numbers(retail_price)  # "١٥٥"
-            new_line = f"{label_part}: 💰 {arabic_price} ج 🔥"
-            new_lines.append(new_line)
-            has_labeled_prices = True
-            continue
+            formatted = f"{label_part}: 💰 {arabic_price} ج 🔥"
+            labeled_prices.append(formatted)
+            continue  # لا نضيف هذا السطر إلى النص الوصفي
         new_lines.append(line)
 
     norm_text = "\n".join(new_lines)
@@ -204,11 +203,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     for line in norm_text.split('\n'):
         line = line.strip()
         if not line or re.match(r'^[A-Z]+\d+.*$', line, re.IGNORECASE): continue
-        
-        # تأكد من حماية سطور الأسعار المحولة (التي تحتوي على 💰)
-        if '💰' in line and 'سعر' in line:
-            cleaned_lines.append(line)
-            continue
         
         if re.search(r'(?:الكارت|كارت).*ب\s*\d+\s*ج', line, re.IGNORECASE): continue
         if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار).*']): continue
@@ -255,9 +249,14 @@ def build_text(original_text, source_id, msg_date, current_num):
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     my_code = f"{prefix}{current_num:02d}{today_str}"
 
+    # بناء النص النهائي
     parts = [description, "", f"الكود : 🔖 {my_code}"]
     
-    if not has_labeled_prices:
+    if labeled_prices:
+        # إضافة الأسعار المسماة بعد الكود
+        parts.extend(labeled_prices)
+    else:
+        # لا توجد أسعار مسماة: نضيف السعر العام
         found_price_val = extract_real_price(original_text)
         final_price_val = RETAIL_MAPPING.get(found_price_val, "")
         price_str_ar = convert_to_arabic_numbers(final_price_val)
