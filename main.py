@@ -185,21 +185,23 @@ def build_text(original_text, source_id, msg_date, current_num):
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
-        # تخطي الأسعار المسماة التي تحتوي على "جملة" أو "اونلاين" لتحكم القواعد القديمة بها
-        if re.search(r'(?:جملة|جمله|اونلاين|online)', line, re.IGNORECASE):
+        # تخطي الأسعار المسماة التي تحتوي على "جملة" (الجملة) فقط - سنحذفها لاحقًا
+        if re.search(r'(?:جملة|جمله)', line, re.IGNORECASE):
             new_lines.append(line)
             continue
 
-        # يطابق "سعر الكوليه: 110" أو "سعر الاسورة:60"
-        match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]\s*(\d+)', line, re.IGNORECASE)
+        # يطابق "سعر الكوليه(اونلاين): 160" أو "سعر الاسورة:60"
+        match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+(?:\s*\([^)]*\))?)\s*[:：]\s*(\d+)', line, re.IGNORECASE)
         if match:
-            label_part = match.group(1)         # مثال: "سعر الكوليه"
-            price = int(match.group(2))         # مثال: 110
-            retail_price = RETAIL_MAPPING.get(price, price)  # 110 -> 155
-            arabic_price = convert_to_arabic_numbers(retail_price)  # "١٥٥"
+            label_part = match.group(1)         # "سعر الكوليه(اونلاين)"
+            # إزالة أي نص بين قوسين وما حوله من مسافات
+            label_part = re.sub(r'\s*\(.*?\)', '', label_part).strip()
+            price = int(match.group(2))         # 160
+            retail_price = RETAIL_MAPPING.get(price, price)  # 160 -> 225
+            arabic_price = convert_to_arabic_numbers(retail_price)
             formatted = f"{label_part}: 💰 {arabic_price} ج 🔥"
             labeled_prices.append(formatted)
-            continue  # لا نضيف هذا السطر إلى النص الوصفي
+            continue  # لا نضيف السطر الأصلي إلى الوصف
         new_lines.append(line)
 
     norm_text = "\n".join(new_lines)
