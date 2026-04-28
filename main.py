@@ -90,7 +90,7 @@ def is_screenshot(photo):
     if not photo: return False
     try:
         ratio = photo.height / photo.width
-        return ratio > 1.4
+        return ratio > 1.5
     except:
         return False
 
