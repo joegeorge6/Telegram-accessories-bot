@@ -90,7 +90,7 @@ def is_screenshot(photo):
     if not photo: return False
     try:
         ratio = photo.height / photo.width
-        return ratio > 1.6
+        return ratio > 1.4
     except:
         return False
 
@@ -183,26 +183,23 @@ def build_text(original_text, source_id, msg_date, current_num):
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
 
-    # قائمة لتخزين الأسعار المسماة بعد تحويلها
     labeled_prices = []
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
-        # تجاهل أي سطر فيه "جملة" أو "اونلاين" - ستتم معالجته لاحقًا كسعر عام
         if re.search(r'(?:جملة|جمله|اونلاين|online)', line, re.IGNORECASE):
             new_lines.append(line)
             continue
 
-        # يطابق "سعر الكوليه: 110" أو "سعر الاسورة:60"
         match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]\s*(\d+)', line, re.IGNORECASE)
         if match:
-            label_part = match.group(1)         # مثال: "سعر الكوليه"
-            price = int(match.group(2))         # مثال: 110
-            retail_price = RETAIL_MAPPING.get(price, price)  # 110 -> 155
-            arabic_price = convert_to_arabic_numbers(retail_price)  # "١٥٥"
+            label_part = match.group(1)
+            price = int(match.group(2))
+            retail_price = RETAIL_MAPPING.get(price, price)
+            arabic_price = convert_to_arabic_numbers(retail_price)
             formatted = f"{label_part}: 💰 {arabic_price} ج 🔥"
             labeled_prices.append(formatted)
-            continue  # لا نضيف هذا السطر إلى النص الوصفي
+            continue
         new_lines.append(line)
 
     norm_text = "\n".join(new_lines)
@@ -215,10 +212,7 @@ def build_text(original_text, source_id, msg_date, current_num):
         if re.search(r'(?:الكارت|كارت).*ب\s*\d+\s*ج', line, re.IGNORECASE): continue
         if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار).*']): continue
         if re.search(r'(?:أونلاين|اونلاين|online)', line, re.IGNORECASE): continue
-        
-        # ====== الشرط الجديد: حذف أي سطر يحتوي على "بكام" ======
-        if re.search(r'بكام', line, re.IGNORECASE):
-            continue
+        if re.search(r'بكام', line, re.IGNORECASE): continue
 
         if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
             continue
@@ -261,7 +255,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     my_code = f"{prefix}{current_num:02d}{today_str}"
 
-    # بناء النص النهائي
     parts = [description, "", f"الكود : 🔖 {my_code}"]
     
     if labeled_prices:
@@ -302,7 +295,9 @@ async def safe_send(client, messages, source_id):
         return
 
     try:
-        print(f"📤 Sending ID {messages[0].id} (Code: {current_num:02d})")
+        # طباعة تشخيصية لتتبع المجموعات
+        media_count = len(valid_messages)
+        print(f"📤 Sending group of {media_count} media, ID {messages[0].id}, Code: {current_num:02d}")
         for m in valid_messages:
             if m.photo: await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
             elif m.video: await client.send_video(RETAIL_CHANNEL, m.video.file_id)
@@ -339,12 +334,16 @@ async def fetch_history(client):
             if msg.media_group_id:
                 if msg.media_group_id in group_processed: continue
                 group_processed.add(msg.media_group_id)
-                all_items.append(await client.get_media_group(channel, msg.id))
+                try:
+                    group = await client.get_media_group(channel, msg.id)
+                except:
+                    continue
+                all_items.append(group)
             else:
                 all_items.append([msg])
 
         all_items.reverse()
-        print(f"📦 {channel}: {len(all_items)} posts")
+        print(f"📦 {channel}: {len(all_items)} posts/groups")
         for item in all_items:
             await safe_send(client, item, channel)
     print("✅ History finished.")
@@ -364,8 +363,14 @@ async def main_handler(client, message):
     if m_date < START_DATE or (END_DATE_LIMIT and m_date > END_DATE_LIMIT):
         return
     if message.media_group_id:
+        # نتجنب المعالجة المزدوجة للمجموعة
+        if is_msg_processed(message.id, message.chat.id):
+            return
         try:
             msgs = await client.get_media_group(message.chat.id, message.id)
+            # وضع علامة معالجة على كل رسائل المجموعة
+            for m in msgs:
+                mark_msg_as_processed(m.id, message.chat.id)
             await safe_send(client, msgs, message.chat.id)
         except: pass
     else:
