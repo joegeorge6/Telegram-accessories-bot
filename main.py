@@ -287,6 +287,9 @@ async def safe_send(client, messages, source_id):
         return
 
     raw_caption = main_msg.caption or main_msg.text
+    # طباعة تشخيصية لمعرفة الكابشن الأصلي
+    print(f"🔍 [DEBUG] Raw caption: {repr(raw_caption[:150])}")
+
     today_str = msg_date.strftime("%d%m")
     counter_key = f"{source_id}_{today_str}"
 
@@ -294,8 +297,12 @@ async def safe_send(client, messages, source_id):
 
     retail_text = build_text(raw_caption, source_id, msg_date, current_num)
     if retail_text is None:
+        print("⛔ [DEBUG] retail_text is None (post blocked)")
         mark_msg_as_processed(messages[0].id, source_id)
         return
+
+    if retail_text == "":
+        print("📝 [DEBUG] retail_text empty, sending media only")
 
     try:
         media_count = len(valid_messages)
