@@ -215,6 +215,10 @@ def build_text(original_text, source_id, msg_date, current_num):
         if re.search(r'(?:الكارت|كارت).*ب\s*\d+\s*ج', line, re.IGNORECASE): continue
         if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار).*']): continue
         if re.search(r'(?:أونلاين|اونلاين|online)', line, re.IGNORECASE): continue
+        
+        # ====== الشرط الجديد: حذف أي سطر يحتوي على "بكام" ======
+        if re.search(r'بكام', line, re.IGNORECASE):
+            continue
 
         if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
             continue
