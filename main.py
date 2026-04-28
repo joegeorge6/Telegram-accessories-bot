@@ -3,7 +3,7 @@ import re
 import asyncio
 import json
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pyrogram import Client, filters, idle
 from pyrogram.errors import FloodWait
 from flask import Flask
@@ -20,7 +20,9 @@ RETAIL_CHANNEL = "@girlsfashionesta"
 DB_FILE = "processed_msgs.txt"
 COUNTERS_FILE = "counters.json"
 
-SCREENSHOT_RATIO = 1.6   # يمكن تعديلها حسب الحاجة
+CAIRO_OFFSET = int(os.environ.get("TIMEZONE_OFFSET", "3"))  # UTC+3 افتراضيًا لمصر
+
+SCREENSHOT_RATIO = 1.6
 
 WORDS_TO_REMOVE = ["SASA", "sasa", "PRIBORE", "Women Accessories"]
 BLOCK_KEYWORDS = [
@@ -32,9 +34,7 @@ BLOCK_KEYWORDS = [
     "صباح الرزق",
     "جميع الاسعار المتكوبه اسعار الجمله",
     "محدش هياخد العرض الا لما يعمل شروط العرض",
-    "لايك",
-    "كومنت",
-    "سيڤ",
+    "لايك", "كومنت", "سيڤ",
     "اعاده نشر او نسخ الرابط او شير",
     "حجز الخواتم ب اسكرين من الفيديو علشان هيبان فيه الشروط",
     "تعالو تيك توك هوريكو شغل دهب اللهم بارك",
@@ -72,14 +72,24 @@ def normalize_numbers(text):
     return text.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
 
 def parse_date(date_str, default_date, is_end=False):
-    if not date_str or date_str.strip() == "": return default_date
-    if len(date_str.split('-')) == 2: date_str += f"-{datetime.now().year}"
+    """تحويل التاريخ المُدخل (بتوقيت القاهرة) إلى UTC للمقارنة"""
+    if not date_str or date_str.strip() == "":
+        return default_date
+    if len(date_str.split('-')) == 2:
+        date_str += f"-{datetime.now().year}"
+    
+    cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
     for fmt in ("%d-%m-%Y", "%Y-%m-%d", "%m-%d-%Y"):
         try:
-            dt = datetime.strptime(date_str.strip(), fmt)
-            if is_end: return dt.replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
-            return dt.replace(hour=0, minute=0, second=0, tzinfo=timezone.utc)
-        except: continue
+            dt_naive = datetime.strptime(date_str.strip(), fmt)
+            if is_end:
+                dt_cairo = dt_naive.replace(hour=23, minute=59, second=59, tzinfo=cairo_tz)
+            else:
+                dt_cairo = dt_naive.replace(hour=0, minute=0, second=0, tzinfo=cairo_tz)
+            # تحويله إلى UTC
+            return dt_cairo.astimezone(timezone.utc)
+        except:
+            continue
     return default_date
 
 START_DATE = parse_date(os.environ.get("START_DATE", ""), datetime.now(timezone.utc))
@@ -388,20 +398,17 @@ async def main_handler(client, message):
     if m_date < START_DATE or (END_DATE_LIMIT and m_date > END_DATE_LIMIT):
         return
     if message.media_group_id:
-        # تجنب تكرار معالجة نفس المجموعة باستخدام media_group_id المؤقت
         if hasattr(client, '_recent_groups') and message.media_group_id in client._recent_groups:
             return
         if not hasattr(client, '_recent_groups'):
             client._recent_groups = set()
         client._recent_groups.add(message.media_group_id)
-        # سنقوم بمسح المعرّف بعد قليل لتجنب امتلاء الذاكرة (اختياري)
         try:
             msgs = await client.get_media_group(message.chat.id, message.id)
             await safe_send(client, msgs, message.chat.id)
         except:
             pass
         finally:
-            # إزالة المعرّف بعد المعالجة (يمكن استخدام مهمة تأخير للحذف)
             client._recent_groups.discard(message.media_group_id)
     else:
         await safe_send(client, [message], message.chat.id)
