@@ -276,24 +276,30 @@ async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
         return
 
+    # نبحث عن أول كابشن في أي رسالة من المجموعة الأصلية (قبل فلترة السكرين شوت)
+    raw_caption = ""
+    for m in messages:
+        cap = m.caption or m.text
+        if cap and cap.strip():
+            raw_caption = cap
+            break
+
     valid_messages = [m for m in messages if not m.poll and not (m.photo and is_screenshot(m.photo))]
     if not valid_messages:
         return
 
-    # 🔍 اختيار أي رسالة في المجموعة تحمل نصاً (وليس فقط الأولى)
-    main_msg = None
-    for m in valid_messages:
-        if m.caption or m.text:
-            main_msg = m
-            break
-    if main_msg is None:
-        main_msg = valid_messages[0]
+    # إذا لم نعثر على كابشن في المجموعة الأصلية، نستخدم أول رسالة صالحة فقط لضمان وجود تاريخ
+    main_msg = valid_messages[0]
+    if raw_caption:
+        # إذا وجدنا كابشن، نحتفظ به للاستخدام ونستخدم تاريخ أول رسالة صالحة
+        pass
+    else:
+        raw_caption = main_msg.caption or main_msg.text or ""
 
     msg_date = main_msg.date.replace(tzinfo=timezone.utc)
     if END_DATE_LIMIT and msg_date > END_DATE_LIMIT:
         return
 
-    raw_caption = main_msg.caption or main_msg.text or ""
     print(f"🔍 [DEBUG] Raw caption: {repr(raw_caption[:150])}")
 
     today_str = msg_date.strftime("%d%m")
