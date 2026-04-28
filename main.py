@@ -20,6 +20,8 @@ RETAIL_CHANNEL = "@girlsfashionesta"
 DB_FILE = "processed_msgs.txt"
 COUNTERS_FILE = "counters.json"
 
+SCREENSHOT_RATIO = 1.6   # يمكن تغيير النسبة من هنا
+
 WORDS_TO_REMOVE = ["SASA", "sasa", "PRIBORE", "Women Accessories"]
 BLOCK_KEYWORDS = [
     "الرسالة المثبته", "نظام التعامل", "بتجمع / ي اوردورك", "قفل فاتورة",
@@ -87,10 +89,11 @@ channel_counters = load_counters()
 SUPPLIER_PREFIX_MAP = {"aymanelawamy123": "A", "sasaaccessories": "S", "ayselstore55": "AS", "miyokowatches22": "M", -1001132261086: "P", -1001448553593: "I", -1001682055192: "H"}
 
 def is_screenshot(photo):
+    """تكتشف إذا كانت الصورة سكرين شوت بناءً على النسبة فقط"""
     if not photo: return False
     try:
         ratio = photo.height / photo.width
-        return ratio > 1.4
+        return ratio > SCREENSHOT_RATIO
     except:
         return False
 
@@ -274,6 +277,7 @@ async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
         return
 
+    # يتم استبعاد الصور التي يشتبه أنها سكرين شوت
     valid_messages = [m for m in messages if not m.poll and not (m.photo and is_screenshot(m.photo))]
     if not valid_messages:
         return
@@ -295,7 +299,6 @@ async def safe_send(client, messages, source_id):
         return
 
     try:
-        # طباعة تشخيصية لتتبع المجموعات
         media_count = len(valid_messages)
         print(f"📤 Sending group of {media_count} media, ID {messages[0].id}, Code: {current_num:02d}")
         for m in valid_messages:
@@ -363,12 +366,10 @@ async def main_handler(client, message):
     if m_date < START_DATE or (END_DATE_LIMIT and m_date > END_DATE_LIMIT):
         return
     if message.media_group_id:
-        # نتجنب المعالجة المزدوجة للمجموعة
         if is_msg_processed(message.id, message.chat.id):
             return
         try:
             msgs = await client.get_media_group(message.chat.id, message.id)
-            # وضع علامة معالجة على كل رسائل المجموعة
             for m in msgs:
                 mark_msg_as_processed(m.id, message.chat.id)
             await safe_send(client, msgs, message.chat.id)
