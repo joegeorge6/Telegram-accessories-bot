@@ -280,7 +280,15 @@ async def safe_send(client, messages, source_id):
     if not valid_messages:
         return
 
-    main_msg = next((m for m in valid_messages if (m.caption or m.text)), valid_messages[0])
+    # 🔍 اختيار أي رسالة في المجموعة تحمل نصاً (وليس فقط الأولى)
+    main_msg = None
+    for m in valid_messages:
+        if m.caption or m.text:
+            main_msg = m
+            break
+    if main_msg is None:
+        main_msg = valid_messages[0]
+
     msg_date = main_msg.date.replace(tzinfo=timezone.utc)
     if END_DATE_LIMIT and msg_date > END_DATE_LIMIT:
         return
