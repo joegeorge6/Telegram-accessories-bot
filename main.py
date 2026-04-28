@@ -20,7 +20,7 @@ RETAIL_CHANNEL = "@girlsfashionesta"
 DB_FILE = "processed_msgs.txt"
 COUNTERS_FILE = "counters.json"
 
-SCREENSHOT_RATIO = 1.6   # يمكن تغيير النسبة من هنا
+SCREENSHOT_RATIO = 1.3   # تم تغييرها إلى 1.3
 
 WORDS_TO_REMOVE = ["SASA", "sasa", "PRIBORE", "Women Accessories"]
 BLOCK_KEYWORDS = [
@@ -93,7 +93,7 @@ def is_screenshot(photo):
     if not photo: return False
     try:
         ratio = photo.height / photo.width
-        return ratio > SCREENSHOT_RATIO
+        return ratio > SCREENSHOT_RATIO   # الآن 1.3
     except:
         return False
 
@@ -277,7 +277,6 @@ async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
         return
 
-    # يتم استبعاد الصور التي يشتبه أنها سكرين شوت
     valid_messages = [m for m in messages if not m.poll and not (m.photo and is_screenshot(m.photo))]
     if not valid_messages:
         return
