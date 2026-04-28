@@ -20,7 +20,7 @@ RETAIL_CHANNEL = "@girlsfashionesta"
 DB_FILE = "processed_msgs.txt"
 COUNTERS_FILE = "counters.json"
 
-SCREENSHOT_RATIO = 1.3   # تم تغييرها إلى 1.3
+SCREENSHOT_RATIO = 1.6   # النسبة النهائية
 
 WORDS_TO_REMOVE = ["SASA", "sasa", "PRIBORE", "Women Accessories"]
 BLOCK_KEYWORDS = [
@@ -89,11 +89,11 @@ channel_counters = load_counters()
 SUPPLIER_PREFIX_MAP = {"aymanelawamy123": "A", "sasaaccessories": "S", "ayselstore55": "AS", "miyokowatches22": "M", -1001132261086: "P", -1001448553593: "I", -1001682055192: "H"}
 
 def is_screenshot(photo):
-    """تكتشف إذا كانت الصورة سكرين شوت بناءً على النسبة فقط"""
+    """تكتشف إذا كانت الصورة سكرين شوت بناءً على النسبة."""
     if not photo: return False
     try:
         ratio = photo.height / photo.width
-        return ratio > SCREENSHOT_RATIO   # الآن 1.3
+        return ratio > SCREENSHOT_RATIO   # 1.6
     except:
         return False
 
