@@ -20,7 +20,7 @@ RETAIL_CHANNEL = "@girlsfashionesta"
 DB_FILE = "processed_msgs.txt"
 COUNTERS_FILE = "counters.json"
 
-SCREENSHOT_RATIO = 1.6   # النسبة النهائية
+SCREENSHOT_RATIO = 1.6
 
 WORDS_TO_REMOVE = ["SASA", "sasa", "PRIBORE", "Women Accessories"]
 BLOCK_KEYWORDS = [
@@ -89,11 +89,10 @@ channel_counters = load_counters()
 SUPPLIER_PREFIX_MAP = {"aymanelawamy123": "A", "sasaaccessories": "S", "ayselstore55": "AS", "miyokowatches22": "M", -1001132261086: "P", -1001448553593: "I", -1001682055192: "H"}
 
 def is_screenshot(photo):
-    """تكتشف إذا كانت الصورة سكرين شوت بناءً على النسبة."""
     if not photo: return False
     try:
         ratio = photo.height / photo.width
-        return ratio > SCREENSHOT_RATIO   # 1.6
+        return ratio > SCREENSHOT_RATIO
     except:
         return False
 
@@ -286,8 +285,7 @@ async def safe_send(client, messages, source_id):
     if END_DATE_LIMIT and msg_date > END_DATE_LIMIT:
         return
 
-    raw_caption = main_msg.caption or main_msg.text
-    # طباعة تشخيصية لمعرفة الكابشن الأصلي
+    raw_caption = main_msg.caption or main_msg.text or ""
     print(f"🔍 [DEBUG] Raw caption: {repr(raw_caption[:150])}")
 
     today_str = msg_date.strftime("%d%m")
