@@ -20,7 +20,7 @@ RETAIL_CHANNEL = "@girlsfashionesta"
 DB_FILE = "processed_msgs.txt"
 COUNTERS_FILE = "counters.json"
 
-SCREENSHOT_RATIO = 1.6
+SCREENSHOT_RATIO = 1.6   # يمكن تعديلها حسب الحاجة
 
 WORDS_TO_REMOVE = ["SASA", "sasa", "PRIBORE", "Women Accessories"]
 BLOCK_KEYWORDS = [
@@ -388,14 +388,21 @@ async def main_handler(client, message):
     if m_date < START_DATE or (END_DATE_LIMIT and m_date > END_DATE_LIMIT):
         return
     if message.media_group_id:
-        if is_msg_processed(message.id, message.chat.id):
+        # تجنب تكرار معالجة نفس المجموعة باستخدام media_group_id المؤقت
+        if hasattr(client, '_recent_groups') and message.media_group_id in client._recent_groups:
             return
+        if not hasattr(client, '_recent_groups'):
+            client._recent_groups = set()
+        client._recent_groups.add(message.media_group_id)
+        # سنقوم بمسح المعرّف بعد قليل لتجنب امتلاء الذاكرة (اختياري)
         try:
             msgs = await client.get_media_group(message.chat.id, message.id)
-            for m in msgs:
-                mark_msg_as_processed(m.id, message.chat.id)
             await safe_send(client, msgs, message.chat.id)
-        except: pass
+        except:
+            pass
+        finally:
+            # إزالة المعرّف بعد المعالجة (يمكن استخدام مهمة تأخير للحذف)
+            client._recent_groups.discard(message.media_group_id)
     else:
         await safe_send(client, [message], message.chat.id)
 
