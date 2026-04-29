@@ -22,7 +22,7 @@ COUNTERS_FILE = "counters.json"
 
 CAIRO_OFFSET = int(os.environ.get("TIMEZONE_OFFSET", "3"))
 
-SCREENSHOT_RATIO = 1.6
+SCREENSHOT_RATIO = 1.7
 
 WORDS_TO_REMOVE = ["SASA", "sasa", "PRIBORE", "Women Accessories"]
 BLOCK_KEYWORDS = [
