@@ -20,7 +20,7 @@ RETAIL_CHANNEL = "@girlsfashionesta"
 DB_FILE = "processed_msgs.txt"
 COUNTERS_FILE = "counters.json"
 
-CAIRO_OFFSET = int(os.environ.get("TIMEZONE_OFFSET", "3"))  # UTC+3 افتراضيًا لمصر
+CAIRO_OFFSET = int(os.environ.get("TIMEZONE_OFFSET", "3"))
 
 SCREENSHOT_RATIO = 1.6
 
@@ -37,8 +37,8 @@ BLOCK_KEYWORDS = [
     "لايك", "كومنت", "سيڤ",
     "اعاده نشر او نسخ الرابط او شير",
     "حجز الخواتم ب اسكرين من الفيديو علشان هيبان فيه الشروط",
-    "تعالو تيك توك هوريكو شغل دهب اللهم بارك",
-    "جارى التصوير والتسعير"
+    "تعالو تيك توك هوريكو شغل دهب اللهم بارك ♥️",
+    "جارى التصوير والتسعير 💥💥💥💥"
 ]
 
 P_CODE_TRANSLATION = {
@@ -72,7 +72,6 @@ def normalize_numbers(text):
     return text.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
 
 def parse_date(date_str, default_date, is_end=False):
-    """تحويل التاريخ المُدخل (بتوقيت القاهرة) إلى UTC للمقارنة"""
     if not date_str or date_str.strip() == "":
         return default_date
     if len(date_str.split('-')) == 2:
@@ -86,7 +85,6 @@ def parse_date(date_str, default_date, is_end=False):
                 dt_cairo = dt_naive.replace(hour=23, minute=59, second=59, tzinfo=cairo_tz)
             else:
                 dt_cairo = dt_naive.replace(hour=0, minute=0, second=0, tzinfo=cairo_tz)
-            # تحويله إلى UTC
             return dt_cairo.astimezone(timezone.utc)
         except:
             continue
@@ -271,7 +269,10 @@ def build_text(original_text, source_id, msg_date, current_num):
         item_name = P_CODE_TRANSLATION[original_code_prefix]
         description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
 
-    today_str = msg_date.strftime("%d%m")
+    cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
+    msg_date_cairo = msg_date.astimezone(cairo_tz)
+    today_str = msg_date_cairo.strftime("%d%m")
+    
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     my_code = f"{prefix}{current_num:02d}{today_str}"
 
@@ -294,7 +295,6 @@ async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
         return
 
-    # نبحث عن أول كابشن في أي رسالة من المجموعة الأصلية (قبل فلترة السكرين شوت)
     raw_caption = ""
     for m in messages:
         cap = m.caption or m.text
@@ -314,16 +314,15 @@ async def safe_send(client, messages, source_id):
     if END_DATE_LIMIT and msg_date > END_DATE_LIMIT:
         return
 
-    print(f"🔍 [DEBUG] Raw caption: {repr(raw_caption[:150])}")
-
-    today_str = msg_date.strftime("%d%m")
+    cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
+    msg_date_cairo = msg_date.astimezone(cairo_tz)
+    today_str = msg_date_cairo.strftime("%d%m")
     counter_key = f"{source_id}_{today_str}"
 
     current_num = channel_counters.get(counter_key, 0) + 1
 
     retail_text = build_text(raw_caption, source_id, msg_date, current_num)
     if retail_text is None:
-        print("⛔ [DEBUG] retail_text is None (post blocked)")
         mark_msg_as_processed(messages[0].id, source_id)
         return
 
