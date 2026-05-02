@@ -204,13 +204,16 @@ def build_text(original_text, source_id, msg_date, current_num):
     labeled_prices = []
     lines = norm_text.split('\n')
     i = 0
-    # المرحلة 1: معالجة الأنماط (اسم القطعة متبوعًا بجملة/اونلاين)
+    # المرحلة 1: معالجة الأنماط (اسم متبوع بـ جملة/اونلاين) مع تخطي الأسطر الفارغة
     while i < len(lines):
         line = lines[i].strip()
-        if line and not re.search(r'\d', line) and not re.search(r'(?:جملة|جمله|اونلاين|online)', line, re.IGNORECASE):
+        if line and not re.search(r'\d', line) and not re.search(r'(?:جملة|جمله|اونلاين|online|سعر|السعر)', line, re.IGNORECASE):
             j = i + 1
             while j < len(lines):
                 next_line = lines[j].strip()
+                if not next_line:  # تخطي الأسطر الفارغة
+                    j += 1
+                    continue
                 if re.search(r'(?:اونلاين|online)\s*(\d+)', next_line, re.IGNORECASE):
                     price_match = re.search(r'(\d+)', next_line)
                     if price_match:
@@ -218,32 +221,31 @@ def build_text(original_text, source_id, msg_date, current_num):
                         retail_price = RETAIL_MAPPING.get(price, price)
                         arabic_price = convert_to_arabic_numbers(retail_price)
                         item_name = line
-                        labeled_prices.append(f"{item_name} بسعر : 💰 {arabic_price} ج 🔥")
+                        labeled_prices.append((item_name, f"{item_name} بسعر : 💰 {arabic_price} ج 🔥"))
+                    del lines[i:j+1]
                     break
                 elif re.search(r'(?:جمله|جملة)', next_line, re.IGNORECASE):
                     j += 1
                     continue
                 else:
                     break
-            del lines[i:j+1]
-            continue
+            if j == len(lines) or not re.search(r'(?:اونلاين|online)\s*(\d+)', lines[j].strip() if j < len(lines) else ""):
+                i += 1
         else:
             i += 1
 
     norm_text = "\n".join(lines)
 
-    # المرحلة 2: معالجة الأسعار المسماة العامة (سلسله : ٢٥٠ج) أو (سعر الكوليه: 110)
+    # المرحلة 2: معالجة الأسعار المسماة العامة
     new_lines = []
     for line in norm_text.split('\n'):
         if re.search(r'(?:جملة|جمله|اونلاين|online)', line, re.IGNORECASE):
             new_lines.append(line)
             continue
 
-        # النمط العام: اسم (لا يحتوي على "سعر" أو "جملة") : رقم
         match = re.search(r'([\u0600-\u06FF\w]+)\s*[:：]\s*(\d+)\s*(?:ج|LE|L\.E|egp|جنيه)?', line, re.IGNORECASE)
         if match:
             label_part = match.group(1)
-            # تجاهل الكلمات التي تسبب تعارضًا أو غير مرغوب فيها
             if label_part.lower() in ["سعر", "السعر", "جملة", "جمله", "اونلاين", "online"]:
                 new_lines.append(line)
                 continue
@@ -251,13 +253,21 @@ def build_text(original_text, source_id, msg_date, current_num):
             retail_price = RETAIL_MAPPING.get(price, price)
             arabic_price = convert_to_arabic_numbers(retail_price)
             formatted = f"{label_part} بسعر : 💰 {arabic_price} ج 🔥"
-            labeled_prices.append(formatted)
-            continue  # لا نضيف السطر الأصلي إلى الوصف
+            labeled_prices.append((label_part, formatted))
+            continue
         new_lines.append(line)
 
     norm_text = "\n".join(new_lines)
 
-    # --- تنظيف النص المتبقي ---
+    # تحديد حالة المنتج الواحد
+    if len(labeled_prices) == 1:
+        price_val = labeled_prices[0][1].split('💰')[1].split(' ج')[0]
+        single_price_line = f"بسعر : 💰 {price_val} ج 🔥"
+        labeled_prices = []
+    else:
+        single_price_line = None
+
+    # تنظيف النص المتبقي
     cleaned_lines = []
     for line in norm_text.split('\n'):
         line = line.strip()
@@ -267,13 +277,10 @@ def build_text(original_text, source_id, msg_date, current_num):
         if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار).*']): continue
         if re.search(r'(?:أونلاين|اونلاين|online)', line, re.IGNORECASE): continue
         if re.search(r'بكام', line, re.IGNORECASE): continue
-
         if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
             continue
-
         if re.search(r'(?:للحجز|طلب الاوردر|للطلب)', line, re.IGNORECASE):
             continue
-
         if re.search(r'\b01\d{9}\b', line):
             continue
 
@@ -288,12 +295,10 @@ def build_text(original_text, source_id, msg_date, current_num):
 
         if is_number_emoji_line(line):
             continue
-
         if line and len(line.split()) == 1 and not any(c.isascii() and c.isalpha() for c in line):
             continue
         if len(line) <= 3 and not any(c.isascii() and c.isalpha() for c in line):
             continue
-
         if line: cleaned_lines.append(line)
 
     description = "\n".join(cleaned_lines)
@@ -314,8 +319,10 @@ def build_text(original_text, source_id, msg_date, current_num):
 
     parts = [description, "", f"الكود : 🔖 {my_code}"]
     
-    if labeled_prices:
-        parts.extend(labeled_prices)
+    if single_price_line:
+        parts.append(single_price_line)
+    elif labeled_prices:
+        parts.extend([lp[1] for lp in labeled_prices])
     else:
         found_price_val = extract_real_price(original_text)
         final_price_val = RETAIL_MAPPING.get(found_price_val, "")
