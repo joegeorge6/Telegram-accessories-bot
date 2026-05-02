@@ -204,14 +204,14 @@ def build_text(original_text, source_id, msg_date, current_num):
     labeled_prices = []
     lines = norm_text.split('\n')
     i = 0
-    # المرحلة 1: معالجة الأنماط (اسم متبوع بـ جملة/اونلاين) مع تخطي الأسطر الفارغة
+    # المرحلة 1: معالجة الأنماط (اسم متبوع بـ جملة/اونلاين) مع الإبقاء على الاسم
     while i < len(lines):
         line = lines[i].strip()
         if line and not re.search(r'\d', line) and not re.search(r'(?:جملة|جمله|اونلاين|online|سعر|السعر)', line, re.IGNORECASE):
             j = i + 1
             while j < len(lines):
                 next_line = lines[j].strip()
-                if not next_line:  # تخطي الأسطر الفارغة
+                if not next_line:
                     j += 1
                     continue
                 if re.search(r'(?:اونلاين|online)\s*(\d+)', next_line, re.IGNORECASE):
@@ -220,17 +220,16 @@ def build_text(original_text, source_id, msg_date, current_num):
                         price = int(price_match.group(1))
                         retail_price = RETAIL_MAPPING.get(price, price)
                         arabic_price = convert_to_arabic_numbers(retail_price)
-                        item_name = line
-                        labeled_prices.append((item_name, f"{item_name} بسعر : 💰 {arabic_price} ج 🔥"))
-                    del lines[i:j+1]
+                        labeled_prices.append((line, f"{line} بسعر : 💰 {arabic_price} ج 🔥"))
+                    # حذف الأسطر بعد الاسم (تشمل الجملة والأونلاين)
+                    del lines[i+1:j+1]
                     break
                 elif re.search(r'(?:جمله|جملة)', next_line, re.IGNORECASE):
                     j += 1
                     continue
                 else:
                     break
-            if j == len(lines) or not re.search(r'(?:اونلاين|online)\s*(\d+)', lines[j].strip() if j < len(lines) else ""):
-                i += 1
+            i += 1  # ننتقل للسطر التالي (لأن الاسم بقي)
         else:
             i += 1
 
