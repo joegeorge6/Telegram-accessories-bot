@@ -203,25 +203,61 @@ def build_text(original_text, source_id, msg_date, current_num):
 
     labeled_prices = []
     lines = norm_text.split('\n')
+    i = 0
+    # المرحلة 1: معالجة الأنماط (اسم القطعة متبوعًا بجملة/اونلاين)
+    while i < len(lines):
+        line = lines[i].strip()
+        if line and not re.search(r'\d', line) and not re.search(r'(?:جملة|جمله|اونلاين|online)', line, re.IGNORECASE):
+            j = i + 1
+            while j < len(lines):
+                next_line = lines[j].strip()
+                if re.search(r'(?:اونلاين|online)\s*(\d+)', next_line, re.IGNORECASE):
+                    price_match = re.search(r'(\d+)', next_line)
+                    if price_match:
+                        price = int(price_match.group(1))
+                        retail_price = RETAIL_MAPPING.get(price, price)
+                        arabic_price = convert_to_arabic_numbers(retail_price)
+                        item_name = line
+                        labeled_prices.append(f"{item_name} بسعر : 💰 {arabic_price} ج 🔥")
+                    break
+                elif re.search(r'(?:جمله|جملة)', next_line, re.IGNORECASE):
+                    j += 1
+                    continue
+                else:
+                    break
+            del lines[i:j+1]
+            continue
+        else:
+            i += 1
+
+    norm_text = "\n".join(lines)
+
+    # المرحلة 2: معالجة الأسعار المسماة العامة (سلسله : ٢٥٠ج) أو (سعر الكوليه: 110)
     new_lines = []
-    for line in lines:
+    for line in norm_text.split('\n'):
         if re.search(r'(?:جملة|جمله|اونلاين|online)', line, re.IGNORECASE):
             new_lines.append(line)
             continue
 
-        match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]\s*(\d+)', line, re.IGNORECASE)
+        # النمط العام: اسم (لا يحتوي على "سعر" أو "جملة") : رقم
+        match = re.search(r'([\u0600-\u06FF\w]+)\s*[:：]\s*(\d+)\s*(?:ج|LE|L\.E|egp|جنيه)?', line, re.IGNORECASE)
         if match:
             label_part = match.group(1)
+            # تجاهل الكلمات التي تسبب تعارضًا أو غير مرغوب فيها
+            if label_part.lower() in ["سعر", "السعر", "جملة", "جمله", "اونلاين", "online"]:
+                new_lines.append(line)
+                continue
             price = int(match.group(2))
             retail_price = RETAIL_MAPPING.get(price, price)
             arabic_price = convert_to_arabic_numbers(retail_price)
-            formatted = f"{label_part}: 💰 {arabic_price} ج 🔥"
+            formatted = f"{label_part} بسعر : 💰 {arabic_price} ج 🔥"
             labeled_prices.append(formatted)
-            continue
+            continue  # لا نضيف السطر الأصلي إلى الوصف
         new_lines.append(line)
 
     norm_text = "\n".join(new_lines)
 
+    # --- تنظيف النص المتبقي ---
     cleaned_lines = []
     for line in norm_text.split('\n'):
         line = line.strip()
