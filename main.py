@@ -199,6 +199,7 @@ def build_text(original_text, source_id, msg_date, current_num):
 
     norm_text = re.sub(r'\binfinity\b', 'فاشونيستا', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'(?:استالس|ستالس)', 'استانلس', norm_text, flags=re.IGNORECASE)
+    norm_text = re.sub(r'(?:استانليس|استنانليس|استالنس)', 'استانلس', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\bبلاتيد\b', 'بليتد', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\bزركون\b', 'زيركون', norm_text, flags=re.IGNORECASE)
 
@@ -308,7 +309,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     code_match = re.search(r'([A-Z]+)\d+', normalize_numbers(original_text), re.IGNORECASE)
     original_code_prefix = code_match.group(1).upper() if code_match else ""
 
-    # ✅ الشرط الجديد: التعويض طالما لا يوجد عربي
     has_arabic = any('\u0600' <= c <= '\u06FF' for c in original_text)
     if not has_arabic and original_code_prefix in P_CODE_TRANSLATION:
         item_name = P_CODE_TRANSLATION[original_code_prefix]
