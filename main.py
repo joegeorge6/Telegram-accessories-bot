@@ -308,7 +308,9 @@ def build_text(original_text, source_id, msg_date, current_num):
     code_match = re.search(r'([A-Z]+)\d+', normalize_numbers(original_text), re.IGNORECASE)
     original_code_prefix = code_match.group(1).upper() if code_match else ""
 
-    if not any(c.isalpha() or '\u0600' <= c <= '\u06FF' for c in original_text) and original_code_prefix in P_CODE_TRANSLATION:
+    # ✅ الشرط الجديد: التعويض طالما لا يوجد عربي
+    has_arabic = any('\u0600' <= c <= '\u06FF' for c in original_text)
+    if not has_arabic and original_code_prefix in P_CODE_TRANSLATION:
         item_name = P_CODE_TRANSLATION[original_code_prefix]
         description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
 
