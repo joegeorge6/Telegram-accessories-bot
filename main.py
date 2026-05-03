@@ -139,7 +139,8 @@ def extract_real_price(text):
     if cart_match:
         return int(cart_match.group(1))
 
-    price_match = re.search(r'(?:الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
+    # تمت إضافة "بسعر" لدعم النمط "بسعر. : 350ج"
+    price_match = re.search(r'(?:بسعر|الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|السعر|price|L\.E|LE)\s*[:：.]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match:
         return int(price_match.group(1))
 
@@ -212,7 +213,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     # المرحلة 1: معالجة الأنماط (اسم متبوع بـ جملة/اونلاين) مع الإبقاء على الاسم
     while i < len(lines):
         line = lines[i].strip()
-        if line and not re.search(r'\d', line) and not re.search(r'(?:جملة|جمله|اونلاين|online|سعر|السعر)', line, re.IGNORECASE):
+        if line and not re.search(r'\d', line) and not re.search(r'(?:جملة|جمله|اونلاين|online|بسعر|سعر|السعر)', line, re.IGNORECASE):
             j = i + 1
             while j < len(lines):
                 next_line = lines[j].strip()
@@ -242,14 +243,14 @@ def build_text(original_text, source_id, msg_date, current_num):
     # المرحلة 2: معالجة الأسعار المسماة العامة
     new_lines = []
     for line in norm_text.split('\n'):
-        if re.search(r'(?:جملة|جمله|اونلاين|online)', line, re.IGNORECASE):
+        if re.search(r'(?:جملة|جمله|اونلاين|online|بسعر)', line, re.IGNORECASE):
             new_lines.append(line)
             continue
 
         match = re.search(r'([\u0600-\u06FF\w]+)\s*[:：]\s*(\d+)\s*(?:ج|LE|L\.E|egp|جنيه)?', line, re.IGNORECASE)
         if match:
             label_part = match.group(1)
-            if label_part.lower() in ["سعر", "السعر", "جملة", "جمله", "اونلاين", "online"]:
+            if label_part.lower() in ["سعر", "السعر", "جملة", "جمله", "اونلاين", "online", "بسعر"]:
                 new_lines.append(line)
                 continue
             price = int(match.group(2))
@@ -278,7 +279,7 @@ def build_text(original_text, source_id, msg_date, current_num):
         
         if re.search(r'(?:الكارت|كارت).*ب\s*\d+\s*ج', line, re.IGNORECASE): continue
         if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار).*']): continue
-        if re.search(r'(?:أونلاين|اونلاين|online)', line, re.IGNORECASE): continue
+        if re.search(r'(?:أونلاين|اونلاين|online|بسعر)', line, re.IGNORECASE): continue
         if re.search(r'بكام', line, re.IGNORECASE): continue
         if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
             continue
@@ -292,16 +293,21 @@ def build_text(original_text, source_id, msg_date, current_num):
             if 15 <= num <= 2000:
                 line = re.sub(r'^\d+\s+', '', line).strip()
 
-        line = re.sub(r'(?:السعر|سعر|price|بسعر|قطعه|قطعة|أونلاين|online|اقل من).*', '', line, flags=re.IGNORECASE).strip()
+        line = re.sub(r'(?:بسعر|السعر|سعر|price|قطعه|قطعة|أونلاين|online|اقل من).*', '', line, flags=re.IGNORECASE).strip()
         line = re.sub(r'\s*ب\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
         line = re.sub(r'[:：]?\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
 
         if is_number_emoji_line(line):
             continue
-        if line and len(line.split()) == 1 and not any(c.isascii() and c.isalpha() for c in line):
+
+        # ✅ الشروط الجديدة للاحتفاظ بالأسماء العربية القصيرة
+        # حذف السطر فقط إذا كان قصيراً (<=3) ولا يحتوي على أي حرف عربي أو إنجليزي
+        if len(line) <= 3 and not re.search(r'[A-Za-z\u0600-\u06FF]', line):
             continue
-        if len(line) <= 3 and not any(c.isascii() and c.isalpha() for c in line):
+        # حذف السطر إذا كان كلمة واحدة ولا يحتوي على أي حرف عربي
+        if line and len(line.split()) == 1 and not re.search(r'[\u0600-\u06FF]', line):
             continue
+
         if line: cleaned_lines.append(line)
 
     description = "\n".join(cleaned_lines)
