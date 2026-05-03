@@ -102,7 +102,11 @@ RETAIL_MAPPING = { 15: 45, 20: 50, 25: 55, 30: 60, 35: 65, 40: 70, 45: 75, 50: 8
 # 2. المساعدات
 # ==========================================
 channel_counters = load_counters()
-SUPPLIER_PREFIX_MAP = {"aymanelawamy123": "A", "sasaaccessories": "S", "ayselstore55": "AS", "miyokowatches22": "M", -1001132261086: "P", -1001448553593: "I", -1001682055192: "H"}
+SUPPLIER_PREFIX_MAP = {
+    "aymanelawamy123": "A", "sasaaccessories": "S", "ayselstore55": "AS",
+    "miyokowatches22": "M", -1001443297771: "P", -1001448553593: "I",
+    -1001682055192: "H"
+}
 
 def is_screenshot(photo):
     if not photo: return False
@@ -221,7 +225,6 @@ def build_text(original_text, source_id, msg_date, current_num):
                         retail_price = RETAIL_MAPPING.get(price, price)
                         arabic_price = convert_to_arabic_numbers(retail_price)
                         labeled_prices.append((line, f"{line} بسعر : 💰 {arabic_price} ج 🔥"))
-                    # حذف الأسطر بعد الاسم (تشمل الجملة والأونلاين)
                     del lines[i+1:j+1]
                     break
                 elif re.search(r'(?:جمله|جملة)', next_line, re.IGNORECASE):
@@ -229,7 +232,7 @@ def build_text(original_text, source_id, msg_date, current_num):
                     continue
                 else:
                     break
-            i += 1  # ننتقل للسطر التالي (لأن الاسم بقي)
+            i += 1
         else:
             i += 1
 
