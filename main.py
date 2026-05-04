@@ -51,7 +51,7 @@ BLOCK_KEYWORDS = [
 
 P_CODE_TRANSLATION = {
     "A": "انسيال", "K": "خلخال", "N": "سلسلة", "CP": "كوليه",
-    "C": "كולيه", "E": "حلق", "R": "خاتم", "B": "اسورة"
+    "C": "كوليه", "E": "حلق", "R": "خاتم", "B": "اسورة"
 }
 
 def load_counters():
@@ -352,7 +352,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     return "\n".join(parts)
 
 # ==========================================
-# 3. نظام النشر (مُحسَّن لتحمل الأخطاء)
+# 3. نظام النشر (مع تشخيص موسع)
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -377,6 +377,9 @@ async def safe_send(client, messages, source_id):
     if END_DATE_LIMIT and msg_date > END_DATE_LIMIT:
         return
 
+    # طباعة تشخيصية: إظهار الكابشن الأصلي
+    print(f"🔍 [DEBUG] Original caption (ID {messages[0].id}): {repr(raw_caption[:100])}...")
+
     cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
     msg_date_cairo = msg_date.astimezone(cairo_tz)
     today_str = msg_date_cairo.strftime("%d%m")
@@ -385,12 +388,17 @@ async def safe_send(client, messages, source_id):
     current_num = channel_counters.get(counter_key, 0) + 1
 
     retail_text = build_text(raw_caption, source_id, msg_date, current_num)
+    
+    # طباعة النتيجة من build_text
+    print(f"🔍 [DEBUG] build_text result: {repr(retail_text[:150])}...")
+
     if retail_text is None:
+        print("⛔ Post blocked (BLOCK_KEYWORDS or None)")
         mark_msg_as_processed(messages[0].id, source_id)
         return
 
     if retail_text == "":
-        print("📝 [DEBUG] retail_text empty, sending media only")
+        print("📝 Text empty, sending media only (caption became empty)")
 
     try:
         media_count = len(valid_messages)
@@ -427,8 +435,8 @@ async def fetch_history(client):
             async for msg in client.get_chat_history(channel, limit=10000):
                 m_date = msg.date.replace(tzinfo=timezone.utc)
                 count += 1
-                if count % 200 == 0:
-                    print(f"⏳ {channel}: {m_date.strftime('%Y-%m-%d')}")
+                if count <= 10 or count % 50 == 0:
+                    print(f"🔍 Msg {count}: ID={msg.id}, processed={is_msg_processed(msg.id, channel)}")
                 if m_date < START_DATE: break
                 if (END_DATE_LIMIT and m_date > END_DATE_LIMIT) or is_msg_processed(msg.id, channel):
                     continue
@@ -438,12 +446,8 @@ async def fetch_history(client):
                     group_processed.add(msg.media_group_id)
                     try:
                         group = await client.get_media_group(channel, msg.id)
-                        if group:
-                            all_items.append(group)
-                        else:
-                            all_items.append([msg])
-                    except Exception as e:
-                        print(f"❌ Error getting media group {msg.media_group_id}: {e}")
+                        all_items.append(group if group else [msg])
+                    except:
                         all_items.append([msg])
                 else:
                     all_items.append([msg])
