@@ -44,12 +44,14 @@ BLOCK_KEYWORDS = [
     "ارقام الحجز",
     "ممنوع الاتصال عبر الوتساب",
     "طريقه الحجز",
-    "ممنوع تبعت اى سؤال على شات الحجز"
+    "ممنوع تبعت اى سؤال على شات الحجز",
+    "للحجز والاستفسار",
+    "01011461515"
 ]
 
 P_CODE_TRANSLATION = {
     "A": "انسيال", "K": "خلخال", "N": "سلسلة", "CP": "كوليه",
-    "C": "كوليه", "E": "حلق", "R": "خاتم", "B": "اسورة"
+    "C": "كולيه", "E": "حلق", "R": "خاتم", "B": "اسورة"
 }
 
 def load_counters():
@@ -210,7 +212,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     if is_emoji_only(norm_text):
         return ""
 
-    # ✅ التعديل: إزالة \b للتعامل مع حالات الالتصاق
     norm_text = re.sub(r'infinity', 'فاشونيستا', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'(?:استالس|ستالس)', 'استانلس', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'(?:استانليس|استنانليس|استالنس)', 'استانلس', norm_text, flags=re.IGNORECASE)
