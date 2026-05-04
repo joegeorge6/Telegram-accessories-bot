@@ -17,7 +17,6 @@ API_HASH = os.environ.get("API_HASH", "0f4e456fc8101e8be8e0dad6aeb87041")
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
 
 RETAIL_CHANNEL = "@girlsfashionesta"
-DB_FILE = "processed_msgs.txt"
 COUNTERS_FILE = "counters.json"
 
 CAIRO_OFFSET = int(os.environ.get("TIMEZONE_OFFSET", "3"))
@@ -115,6 +114,12 @@ SUPPLIER_PREFIX_MAP = {
     -1001682055192: "H"
 }
 
+def get_db_file(channel_id):
+    """تحويل معرف القناة إلى اسم ملف آمن"""
+    # تنظيف الاسم ليكون مقبولًا في نظام الملفات
+    safe_name = str(channel_id).replace("-", "n").replace("@", "").replace("/", "_")
+    return f"processed_{safe_name}.txt"
+
 def is_screenshot(photo):
     if not photo: return False
     try:
@@ -124,13 +129,16 @@ def is_screenshot(photo):
         return False
 
 def is_msg_processed(msg_id, source_id):
-    if not os.path.exists(DB_FILE): return False
+    db_file = get_db_file(source_id)
+    if not os.path.exists(db_file):
+        return False
     search_key = f"{source_id}:{msg_id}"
-    with open(DB_FILE, "r") as f:
+    with open(db_file, "r") as f:
         return search_key in f.read().splitlines()
 
 def mark_msg_as_processed(msg_id, source_id):
-    with open(DB_FILE, "a") as f:
+    db_file = get_db_file(source_id)
+    with open(db_file, "a") as f:
         f.write(f"{source_id}:{msg_id}\n")
 
 def extract_real_price(text):
@@ -472,6 +480,23 @@ def home():
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
+
+    # حذف ملف قناة معينة إذا طلب المستخدم إعادة تعيينها
+    reset_channel = os.environ.get("RESET_CHANNEL", "").strip()
+    if reset_channel:
+        # التعامل مع المعرفات النصية والرقمية
+        try:
+            if reset_channel.startswith("-"):
+                channel_id = int(reset_channel)
+            else:
+                channel_id = reset_channel
+        except:
+            channel_id = reset_channel
+        db_file = get_db_file(channel_id)
+        if os.path.exists(db_file):
+            os.remove(db_file)
+            print(f"♻️ تم حذف ملف الذاكرة للقناة: {channel_id}")
+
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
