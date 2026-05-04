@@ -115,8 +115,6 @@ SUPPLIER_PREFIX_MAP = {
 }
 
 def get_db_file(channel_id):
-    """تحويل معرف القناة إلى اسم ملف آمن"""
-    # تنظيف الاسم ليكون مقبولًا في نظام الملفات
     safe_name = str(channel_id).replace("-", "n").replace("@", "").replace("/", "_")
     return f"processed_{safe_name}.txt"
 
@@ -481,10 +479,11 @@ async def start_bot():
     global channel_counters
     channel_counters = load_counters()
 
-    # حذف ملف قناة معينة إذا طلب المستخدم إعادة تعيينها
+    # ============ تشخيص RESET_CHANNEL ============
     reset_channel = os.environ.get("RESET_CHANNEL", "").strip()
+    print(f"🔧 RESET_CHANNEL variable value: '{reset_channel}'")
+    
     if reset_channel:
-        # التعامل مع المعرفات النصية والرقمية
         try:
             if reset_channel.startswith("-"):
                 channel_id = int(reset_channel)
@@ -492,10 +491,18 @@ async def start_bot():
                 channel_id = reset_channel
         except:
             channel_id = reset_channel
+            
         db_file = get_db_file(channel_id)
+        print(f"🔍 Looking for DB file: {db_file}")
         if os.path.exists(db_file):
+            print(f"🗑️ Deleting {db_file}")
             os.remove(db_file)
-            print(f"♻️ تم حذف ملف الذاكرة للقناة: {channel_id}")
+            print(f"✅ Deleted.")
+        else:
+            print(f"❌ File not found: {db_file}")
+    else:
+        print("ℹ️ No RESET_CHANNEL set.")
+    # =============================================
 
     await app.start()
     asyncio.create_task(fetch_history(app))
