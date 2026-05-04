@@ -38,7 +38,14 @@ BLOCK_KEYWORDS = [
     "اعاده نشر او نسخ الرابط او شير",
     "حجز الخواتم ب اسكرين من الفيديو علشان هيبان فيه الشروط",
     "تعالو تيك توك هوريكو شغل دهب اللهم بارك ♥️",
-    "جارى التصوير والتسعير 💥💥💥💥"
+    "جارى التصوير والتسعير 💥💥💥💥",
+    "جرد شهر شروط الحجز",
+    "الساده العملاء الكرام اهلا وسهلا بكم",
+    "شرووط الحجز",
+    "ارقام الحجز",
+    "ممنوع الاتصال عبر الوتساب",
+    "طريقه الحجز",
+    "ممنوع تبعت اى سؤال على شات الحجز"
 ]
 
 P_CODE_TRANSLATION = {
@@ -139,7 +146,6 @@ def extract_real_price(text):
     if cart_match:
         return int(cart_match.group(1))
 
-    # تمت إضافة "بسعر" لدعم النمط "بسعر. : 350ج"
     price_match = re.search(r'(?:بسعر|الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|السعر|price|L\.E|LE)\s*[:：.]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match:
         return int(price_match.group(1))
@@ -210,7 +216,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     labeled_prices = []
     lines = norm_text.split('\n')
     i = 0
-    # المرحلة 1: معالجة الأنماط (اسم متبوع بـ جملة/اونلاين) مع الإبقاء على الاسم
     while i < len(lines):
         line = lines[i].strip()
         if line and not re.search(r'\d', line) and not re.search(r'(?:جملة|جمله|اونلاين|online|بسعر|سعر|السعر)', line, re.IGNORECASE):
@@ -240,7 +245,6 @@ def build_text(original_text, source_id, msg_date, current_num):
 
     norm_text = "\n".join(lines)
 
-    # المرحلة 2: معالجة الأسعار المسماة العامة
     new_lines = []
     for line in norm_text.split('\n'):
         if re.search(r'(?:جملة|جمله|اونلاين|online|بسعر)', line, re.IGNORECASE):
@@ -263,7 +267,6 @@ def build_text(original_text, source_id, msg_date, current_num):
 
     norm_text = "\n".join(new_lines)
 
-    # تحديد حالة المنتج الواحد
     if len(labeled_prices) == 1:
         price_val = labeled_prices[0][1].split('💰')[1].split(' ج')[0]
         single_price_line = f"بسعر : 💰 {price_val} ج 🔥"
@@ -271,7 +274,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     else:
         single_price_line = None
 
-    # تنظيف النص المتبقي
     cleaned_lines = []
     for line in norm_text.split('\n'):
         line = line.strip()
@@ -300,11 +302,8 @@ def build_text(original_text, source_id, msg_date, current_num):
         if is_number_emoji_line(line):
             continue
 
-        # ✅ الشروط الجديدة للاحتفاظ بالأسماء العربية القصيرة
-        # حذف السطر فقط إذا كان قصيراً (<=3) ولا يحتوي على أي حرف عربي أو إنجليزي
         if len(line) <= 3 and not re.search(r'[A-Za-z\u0600-\u06FF]', line):
             continue
-        # حذف السطر إذا كان كلمة واحدة ولا يحتوي على أي حرف عربي
         if line and len(line.split()) == 1 and not re.search(r'[\u0600-\u06FF]', line):
             continue
 
