@@ -308,6 +308,10 @@ def build_text(original_text, source_id, msg_date, current_num):
         if is_number_emoji_line(line):
             continue
 
+        # حذف بقايا "ال" الناتجة عن إزالة سطر "القطعه"
+        if line == "ال":
+            continue
+
         if len(line) <= 3 and not re.search(r'[A-Za-z\u0600-\u06FF]', line):
             continue
         if line and len(line.split()) == 1 and not re.search(r'[\u0600-\u06FF]', line):
@@ -478,32 +482,6 @@ def home():
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-
-    # ============ تشخيص RESET_CHANNEL ============
-    reset_channel = os.environ.get("RESET_CHANNEL", "").strip()
-    print(f"🔧 RESET_CHANNEL variable value: '{reset_channel}'")
-    
-    if reset_channel:
-        try:
-            if reset_channel.startswith("-"):
-                channel_id = int(reset_channel)
-            else:
-                channel_id = reset_channel
-        except:
-            channel_id = reset_channel
-            
-        db_file = get_db_file(channel_id)
-        print(f"🔍 Looking for DB file: {db_file}")
-        if os.path.exists(db_file):
-            print(f"🗑️ Deleting {db_file}")
-            os.remove(db_file)
-            print(f"✅ Deleted.")
-        else:
-            print(f"❌ File not found: {db_file}")
-    else:
-        print("ℹ️ No RESET_CHANNEL set.")
-    # =============================================
-
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
