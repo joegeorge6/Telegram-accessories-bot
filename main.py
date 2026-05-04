@@ -210,7 +210,8 @@ def build_text(original_text, source_id, msg_date, current_num):
     if is_emoji_only(norm_text):
         return ""
 
-    norm_text = re.sub(r'\binfinity\b', 'فاشونيستا', norm_text, flags=re.IGNORECASE)
+    # ✅ التعديل: إزالة \b للتعامل مع حالات الالتصاق
+    norm_text = re.sub(r'infinity', 'فاشونيستا', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'(?:استالس|ستالس)', 'استانلس', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'(?:استانليس|استنانليس|استالنس)', 'استانلس', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\bبلاتيد\b', 'بليتد', norm_text, flags=re.IGNORECASE)
