@@ -358,10 +358,10 @@ def build_text(original_text, source_id, msg_date, current_num):
     except Exception as e:
         print(f"❌ Error in build_text for ID {current_num}: {e}")
         traceback.print_exc()
-        return ""  # إرسال الصور بدون نص في حالة حدوث خطأ
+        return ""
 
 # ==========================================
-# 3. نظام النشر (مُحسَّن لتحمل الأخطاء)
+# 3. نظام النشر (تأمين كامل)
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -369,24 +369,35 @@ async def safe_send(client, messages, source_id):
 
     raw_caption = ""
     for m in messages:
-        cap = m.caption or m.text
-        if cap and cap.strip():
-            raw_caption = cap
-            break
+        try:
+            cap = m.caption or m.text
+            if cap and cap.strip():
+                raw_caption = cap
+                break
+        except:
+            continue
 
-    valid_messages = [m for m in messages if not m.poll and not (m.photo and is_screenshot(m.photo))]
+    valid_messages = []
+    for m in messages:
+        try:
+            if not m.poll and not (m.photo and is_screenshot(m.photo)):
+                valid_messages.append(m)
+        except:
+            pass
+
     if not valid_messages:
         return
 
     main_msg = valid_messages[0]
     if not raw_caption:
-        raw_caption = main_msg.caption or main_msg.text or ""
+        try:
+            raw_caption = main_msg.caption or main_msg.text or ""
+        except:
+            raw_caption = ""
 
     msg_date = main_msg.date.replace(tzinfo=timezone.utc)
     if END_DATE_LIMIT and msg_date > END_DATE_LIMIT:
         return
-
-    print(f"🔍 [DEBUG] Original caption (ID {messages[0].id}): {repr(raw_caption[:100])}...")
 
     cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
     msg_date_cairo = msg_date.astimezone(cairo_tz)
@@ -395,51 +406,47 @@ async def safe_send(client, messages, source_id):
 
     current_num = channel_counters.get(counter_key, 0) + 1
 
-    retail_text = build_text(raw_caption, source_id, msg_date, current_num)
+    try:
+        retail_text = build_text(raw_caption, source_id, msg_date, current_num)
+    except:
+        retail_text = ""
+
     if retail_text is None:
         retail_text = ""
-    print(f"🔍 [DEBUG] build_text result: {repr(retail_text[:150])}...")
 
-    if retail_text == "":
-        print("📝 Text empty, sending media only")
-
-    try:
-        media_count = len(valid_messages)
-        print(f"📤 Sending group of {media_count} media, ID {messages[0].id}, Code: {current_num:02d}")
-        for m in valid_messages:
+    print(f"📤 Sending {len(valid_messages)} media, ID {messages[0].id}, Code: {current_num:02d}")
+    for m in valid_messages:
+        try:
             if m.photo: await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
             elif m.video: await client.send_video(RETAIL_CHANNEL, m.video.file_id)
             elif m.animation: await client.send_animation(RETAIL_CHANNEL, m.animation.file_id)
             await asyncio.sleep(2)
+        except FloodWait as e:
+            print(f"⏳ FloodWait {e.value}s")
+            await asyncio.sleep(e.value + 5)
+        except Exception as e:
+            print(f"❌ Media send failed: {e}")
 
-        if retail_text != "":
+    if retail_text != "":
+        try:
             await client.send_message(RETAIL_CHANNEL, retail_text)
+        except Exception as e:
+            print(f"❌ Text send failed: {e}")
+        else:
             if raw_caption:
                 channel_counters[counter_key] = current_num
                 save_counter(counter_key, current_num)
 
-        mark_msg_as_processed(messages[0].id, source_id)
-        await asyncio.sleep(3)
-    except FloodWait as e:
-        print(f"⏳ FloodWait {e.value} seconds, waiting and skipping...")
-        await asyncio.sleep(e.value + 5)
-        mark_msg_as_processed(messages[0].id, source_id)
-    except Exception as e:
-        print(f"❌ Error in safe_send: {e}")
-        traceback.print_exc()
-        mark_msg_as_processed(messages[0].id, source_id)
+    mark_msg_as_processed(messages[0].id, source_id)
+    await asyncio.sleep(3)
 
 async def fetch_history(client):
     print(f"🚀 Scanning history...")
     for channel in SOURCE_CHANNELS:
         all_items, group_processed = [], set()
-        count = 0
         try:
             async for msg in client.get_chat_history(channel, limit=10000):
                 m_date = msg.date.replace(tzinfo=timezone.utc)
-                count += 1
-                if count <= 10 or count % 50 == 0:
-                    print(f"🔍 Msg {count}: ID={msg.id}, processed={is_msg_processed(msg.id, channel)}")
                 if m_date < START_DATE: break
                 if (END_DATE_LIMIT and m_date > END_DATE_LIMIT) or is_msg_processed(msg.id, channel):
                     continue
