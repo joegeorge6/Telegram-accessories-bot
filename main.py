@@ -308,7 +308,6 @@ def build_text(original_text, source_id, msg_date, current_num):
         if is_number_emoji_line(line):
             continue
 
-        # حذف بقايا "ال" الناتجة عن إزالة سطر "القطعه"
         if line == "ال":
             continue
 
@@ -351,7 +350,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     return "\n".join(parts)
 
 # ==========================================
-# 3. نظام النشر
+# 3. نظام النشر (مُحسَّن لتحمل الأخطاء)
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -409,39 +408,56 @@ async def safe_send(client, messages, source_id):
         mark_msg_as_processed(messages[0].id, source_id)
         await asyncio.sleep(3)
     except FloodWait as e:
-        await asyncio.sleep(e.value)
+        print(f"⏳ FloodWait {e.value} seconds, waiting and skipping...")
+        await asyncio.sleep(e.value + 5)
+        mark_msg_as_processed(messages[0].id, source_id)
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Error in safe_send: {e}")
+        traceback.print_exc()
+        mark_msg_as_processed(messages[0].id, source_id)
 
 async def fetch_history(client):
     print(f"🚀 Scanning history...")
     for channel in SOURCE_CHANNELS:
         all_items, group_processed = [], set()
         count = 0
-        async for msg in client.get_chat_history(channel, limit=10000):
-            m_date = msg.date.replace(tzinfo=timezone.utc)
-            count += 1
-            if count % 200 == 0:
-                print(f"⏳ {channel}: {m_date.strftime('%Y-%m-%d')}")
-            if m_date < START_DATE: break
-            if (END_DATE_LIMIT and m_date > END_DATE_LIMIT) or is_msg_processed(msg.id, channel):
-                continue
-
-            if msg.media_group_id:
-                if msg.media_group_id in group_processed: continue
-                group_processed.add(msg.media_group_id)
-                try:
-                    group = await client.get_media_group(channel, msg.id)
-                except:
+        try:
+            async for msg in client.get_chat_history(channel, limit=10000):
+                m_date = msg.date.replace(tzinfo=timezone.utc)
+                count += 1
+                if count % 200 == 0:
+                    print(f"⏳ {channel}: {m_date.strftime('%Y-%m-%d')}")
+                if m_date < START_DATE: break
+                if (END_DATE_LIMIT and m_date > END_DATE_LIMIT) or is_msg_processed(msg.id, channel):
                     continue
-                all_items.append(group)
-            else:
-                all_items.append([msg])
 
-        all_items.reverse()
-        print(f"📦 {channel}: {len(all_items)} posts/groups")
-        for item in all_items:
-            await safe_send(client, item, channel)
+                if msg.media_group_id:
+                    if msg.media_group_id in group_processed: continue
+                    group_processed.add(msg.media_group_id)
+                    try:
+                        group = await client.get_media_group(channel, msg.id)
+                        if group:
+                            all_items.append(group)
+                        else:
+                            all_items.append([msg])
+                    except Exception as e:
+                        print(f"❌ Error getting media group {msg.media_group_id}: {e}")
+                        all_items.append([msg])
+                else:
+                    all_items.append([msg])
+
+            all_items.reverse()
+            print(f"📦 {channel}: {len(all_items)} posts/groups")
+            for item in all_items:
+                try:
+                    await safe_send(client, item, channel)
+                except Exception as e:
+                    print(f"❌ Failed to send post from {channel}: {e}")
+                    if item:
+                        mark_msg_as_processed(item[0].id, channel)
+        except Exception as e:
+            print(f"❌ Error scanning channel {channel}: {e}")
+            traceback.print_exc()
     print("✅ History finished.")
 
 # ==========================================
@@ -482,6 +498,21 @@ def home():
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
+
+    reset_channel = os.environ.get("RESET_CHANNEL", "").strip()
+    if reset_channel:
+        try:
+            if reset_channel.startswith("-"):
+                channel_id = int(reset_channel)
+            else:
+                channel_id = reset_channel
+        except:
+            channel_id = reset_channel
+        db_file = get_db_file(channel_id)
+        if os.path.exists(db_file):
+            os.remove(db_file)
+            print(f"♻️ تم حذف ملف الذاكرة للقناة: {channel_id}")
+
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
