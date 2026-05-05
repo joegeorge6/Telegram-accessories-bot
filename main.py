@@ -361,84 +361,88 @@ def build_text(original_text, source_id, msg_date, current_num):
         return ""
 
 # ==========================================
-# 3. نظام النشر (تأمين كامل)
+# 3. نظام النشر (نسخة آمنة بدون أخطاء)
 # ==========================================
 async def safe_send(client, messages, source_id):
-    if not messages or is_msg_processed(messages[0].id, source_id):
-        return
-
-    raw_caption = ""
-    for m in messages:
-        try:
-            cap = m.caption or m.text
-            if cap and cap.strip():
-                raw_caption = cap
-                break
-        except:
-            continue
-
-    valid_messages = []
-    for m in messages:
-        try:
-            if not m.poll and not (m.photo and is_screenshot(m.photo)):
-                valid_messages.append(m)
-        except:
-            pass
-
-    if not valid_messages:
-        return
-
-    main_msg = valid_messages[0]
-    if not raw_caption:
-        try:
-            raw_caption = main_msg.caption or main_msg.text or ""
-        except:
-            raw_caption = ""
-
-    msg_date = main_msg.date.replace(tzinfo=timezone.utc)
-    if END_DATE_LIMIT and msg_date > END_DATE_LIMIT:
-        return
-
-    cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
-    msg_date_cairo = msg_date.astimezone(cairo_tz)
-    today_str = msg_date_cairo.strftime("%d%m")
-    counter_key = f"{source_id}_{today_str}"
-
-    current_num = channel_counters.get(counter_key, 0) + 1
-
     try:
+        if not messages or is_msg_processed(messages[0].id, source_id):
+            return
+
+        raw_caption = ""
+        for m in messages:
+            try:
+                cap = m.caption or m.text
+                if cap and cap.strip():
+                    raw_caption = cap
+                    break
+            except:
+                continue
+
+        valid_messages = []
+        for m in messages:
+            try:
+                if not m.poll and not (m.photo and is_screenshot(m.photo)):
+                    valid_messages.append(m)
+            except:
+                pass
+
+        if not valid_messages:
+            return
+
+        main_msg = valid_messages[0]
+        if not raw_caption:
+            try:
+                raw_caption = main_msg.caption or main_msg.text or ""
+            except:
+                raw_caption = ""
+
+        msg_date = main_msg.date.replace(tzinfo=timezone.utc)
+        if END_DATE_LIMIT and msg_date > END_DATE_LIMIT:
+            return
+
+        print(f"📤 Sending {len(valid_messages)} media, ID {messages[0].id}")
+
+        cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
+        msg_date_cairo = msg_date.astimezone(cairo_tz)
+        today_str = msg_date_cairo.strftime("%d%m")
+        counter_key = f"{source_id}_{today_str}"
+
+        current_num = channel_counters.get(counter_key, 0) + 1
+
         retail_text = build_text(raw_caption, source_id, msg_date, current_num)
-    except:
-        retail_text = ""
+        if retail_text is None:
+            retail_text = ""
 
-    if retail_text is None:
-        retail_text = ""
+        for m in valid_messages:
+            try:
+                if m.photo: await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
+                elif m.video: await client.send_video(RETAIL_CHANNEL, m.video.file_id)
+                elif m.animation: await client.send_animation(RETAIL_CHANNEL, m.animation.file_id)
+                await asyncio.sleep(2)
+            except FloodWait as e:
+                print(f"⏳ FloodWait {e.value}s")
+                await asyncio.sleep(e.value + 5)
+            except Exception as e:
+                print(f"❌ Media send failed: {e}")
 
-    print(f"📤 Sending {len(valid_messages)} media, ID {messages[0].id}, Code: {current_num:02d}")
-    for m in valid_messages:
-        try:
-            if m.photo: await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
-            elif m.video: await client.send_video(RETAIL_CHANNEL, m.video.file_id)
-            elif m.animation: await client.send_animation(RETAIL_CHANNEL, m.animation.file_id)
-            await asyncio.sleep(2)
-        except FloodWait as e:
-            print(f"⏳ FloodWait {e.value}s")
-            await asyncio.sleep(e.value + 5)
-        except Exception as e:
-            print(f"❌ Media send failed: {e}")
+        if retail_text != "":
+            try:
+                await client.send_message(RETAIL_CHANNEL, retail_text)
+            except Exception as e:
+                print(f"❌ Text send failed: {e}")
+            else:
+                if raw_caption:
+                    channel_counters[counter_key] = current_num
+                    save_counter(counter_key, current_num)
 
-    if retail_text != "":
-        try:
-            await client.send_message(RETAIL_CHANNEL, retail_text)
-        except Exception as e:
-            print(f"❌ Text send failed: {e}")
-        else:
-            if raw_caption:
-                channel_counters[counter_key] = current_num
-                save_counter(counter_key, current_num)
+        mark_msg_as_processed(messages[0].id, source_id)
+        await asyncio.sleep(3)
 
-    mark_msg_as_processed(messages[0].id, source_id)
-    await asyncio.sleep(3)
+    except Exception as e:
+        print(f"❌ Unexpected error in safe_send: {e}")
+        traceback.print_exc()
+        if messages:
+            mark_msg_as_processed(messages[0].id, source_id)
 
 async def fetch_history(client):
     print(f"🚀 Scanning history...")
@@ -465,12 +469,7 @@ async def fetch_history(client):
             all_items.reverse()
             print(f"📦 {channel}: {len(all_items)} posts/groups")
             for item in all_items:
-                try:
-                    await safe_send(client, item, channel)
-                except Exception as e:
-                    print(f"❌ Failed to send post from {channel}: {e}")
-                    if item:
-                        mark_msg_as_processed(item[0].id, channel)
+                await safe_send(client, item, channel)
         except Exception as e:
             print(f"❌ Error scanning channel {channel}: {e}")
             traceback.print_exc()
