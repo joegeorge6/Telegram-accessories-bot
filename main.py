@@ -352,7 +352,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     return "\n".join(parts)
 
 # ==========================================
-# 3. نظام النشر (مع حماية إضافية)
+# 3. نظام النشر (مع تشخيص إضافي)
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -407,7 +407,7 @@ async def safe_send(client, messages, source_id):
     except FloodWait as e:
         await asyncio.sleep(e.value)
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Error in safe_send: {e}")
 
 async def fetch_history(client):
     print(f"🚀 Scanning history...")
@@ -436,12 +436,14 @@ async def fetch_history(client):
 
         all_items.reverse()
         print(f"📦 {channel}: {len(all_items)} posts/groups")
-        for item in all_items:
-            # ✨ شبكة الأمان: أي خطأ في منشور لن يوقف البوت
+        for idx, item in enumerate(all_items):
             try:
+                print(f"➡️ Starting post {idx+1}/{len(all_items)} (first ID: {item[0].id})")
                 await safe_send(client, item, channel)
+                print(f"✅ Finished post {idx+1}/{len(all_items)}")
             except Exception as e:
-                print(f"❌ Failed to send post from {channel}: {e}")
+                print(f"❌ Failed to send post {idx+1}/{len(all_items)}: {e}")
+                traceback.print_exc()
                 if item:
                     mark_msg_as_processed(item[0].id, channel)
     print("✅ History finished.")
