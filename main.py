@@ -361,23 +361,25 @@ def build_text(original_text, source_id, msg_date, current_num):
         return ""
 
 # ==========================================
-# 3. نظام النشر (نسخة آمنة بدون أخطاء)
+# 3. نظام النشر (محصن بالكامل)
 # ==========================================
 async def safe_send(client, messages, source_id):
     try:
         if not messages or is_msg_processed(messages[0].id, source_id):
             return
 
+        # استخراج الكابشن بأمان
         raw_caption = ""
         for m in messages:
             try:
                 cap = m.caption or m.text
-                if cap and cap.strip():
-                    raw_caption = cap
+                if cap and str(cap).strip():
+                    raw_caption = str(cap)
                     break
             except:
                 continue
 
+        # تجهيز الوسائط الصالحة
         valid_messages = []
         for m in messages:
             try:
@@ -389,18 +391,17 @@ async def safe_send(client, messages, source_id):
         if not valid_messages:
             return
 
+        # استخدام أول وسيط صالح للحصول على التاريخ
         main_msg = valid_messages[0]
         if not raw_caption:
             try:
-                raw_caption = main_msg.caption or main_msg.text or ""
+                raw_caption = str(main_msg.caption or main_msg.text or "")
             except:
                 raw_caption = ""
 
         msg_date = main_msg.date.replace(tzinfo=timezone.utc)
         if END_DATE_LIMIT and msg_date > END_DATE_LIMIT:
             return
-
-        print(f"📤 Sending {len(valid_messages)} media, ID {messages[0].id}")
 
         cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
         msg_date_cairo = msg_date.astimezone(cairo_tz)
@@ -409,10 +410,16 @@ async def safe_send(client, messages, source_id):
 
         current_num = channel_counters.get(counter_key, 0) + 1
 
-        retail_text = build_text(raw_caption, source_id, msg_date, current_num)
+        # بناء النص مع الحماية
+        retail_text = ""
+        try:
+            retail_text = build_text(raw_caption, source_id, msg_date, current_num)
+        except:
+            pass
         if retail_text is None:
             retail_text = ""
 
+        # إرسال الوسائط
         for m in valid_messages:
             try:
                 if m.photo: await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
@@ -420,26 +427,25 @@ async def safe_send(client, messages, source_id):
                 elif m.animation: await client.send_animation(RETAIL_CHANNEL, m.animation.file_id)
                 await asyncio.sleep(2)
             except FloodWait as e:
-                print(f"⏳ FloodWait {e.value}s")
                 await asyncio.sleep(e.value + 5)
             except Exception as e:
-                print(f"❌ Media send failed: {e}")
+                print(f"❌ Media send error: {e}")
 
-        if retail_text != "":
+        # إرسال النص إن وجد
+        if retail_text.strip():
             try:
                 await client.send_message(RETAIL_CHANNEL, retail_text)
-            except Exception as e:
-                print(f"❌ Text send failed: {e}")
-            else:
                 if raw_caption:
                     channel_counters[counter_key] = current_num
                     save_counter(counter_key, current_num)
+            except Exception as e:
+                print(f"❌ Text send error: {e}")
 
         mark_msg_as_processed(messages[0].id, source_id)
         await asyncio.sleep(3)
 
     except Exception as e:
-        print(f"❌ Unexpected error in safe_send: {e}")
+        print(f"❌ safe_send unexpected error: {e}")
         traceback.print_exc()
         if messages:
             mark_msg_as_processed(messages[0].id, source_id)
