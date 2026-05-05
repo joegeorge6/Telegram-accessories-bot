@@ -352,7 +352,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     return "\n".join(parts)
 
 # ==========================================
-# 3. نظام النشر (نسخة 237 الأصلية)
+# 3. نظام النشر (مع حماية إضافية)
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -437,7 +437,7 @@ async def fetch_history(client):
         all_items.reverse()
         print(f"📦 {channel}: {len(all_items)} posts/groups")
         for item in all_items:
-            # ✨ شبكة الأمان الوحيدة: حماية كل منشور على حدة
+            # ✨ شبكة الأمان: أي خطأ في منشور لن يوقف البوت
             try:
                 await safe_send(client, item, channel)
             except Exception as e:
