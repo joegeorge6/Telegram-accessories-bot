@@ -361,14 +361,13 @@ def build_text(original_text, source_id, msg_date, current_num):
         return ""
 
 # ==========================================
-# 3. نظام النشر (محصن بالكامل)
+# 3. نظام النشر (خالي من أي طباعة تشخيصية)
 # ==========================================
 async def safe_send(client, messages, source_id):
     try:
         if not messages or is_msg_processed(messages[0].id, source_id):
             return
 
-        # استخراج الكابشن بأمان
         raw_caption = ""
         for m in messages:
             try:
@@ -379,7 +378,6 @@ async def safe_send(client, messages, source_id):
             except:
                 continue
 
-        # تجهيز الوسائط الصالحة
         valid_messages = []
         for m in messages:
             try:
@@ -391,7 +389,6 @@ async def safe_send(client, messages, source_id):
         if not valid_messages:
             return
 
-        # استخدام أول وسيط صالح للحصول على التاريخ
         main_msg = valid_messages[0]
         if not raw_caption:
             try:
@@ -410,7 +407,6 @@ async def safe_send(client, messages, source_id):
 
         current_num = channel_counters.get(counter_key, 0) + 1
 
-        # بناء النص مع الحماية
         retail_text = ""
         try:
             retail_text = build_text(raw_caption, source_id, msg_date, current_num)
@@ -419,7 +415,6 @@ async def safe_send(client, messages, source_id):
         if retail_text is None:
             retail_text = ""
 
-        # إرسال الوسائط
         for m in valid_messages:
             try:
                 if m.photo: await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
@@ -431,7 +426,6 @@ async def safe_send(client, messages, source_id):
             except Exception as e:
                 print(f"❌ Media send error: {e}")
 
-        # إرسال النص إن وجد
         if retail_text.strip():
             try:
                 await client.send_message(RETAIL_CHANNEL, retail_text)
