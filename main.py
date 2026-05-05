@@ -352,7 +352,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     return "\n".join(parts)
 
 # ==========================================
-# 3. نظام النشر (مع تشخيص إضافي)
+# 3. نظام النشر (مع طباعة تشخيصية خفيفة)
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -367,6 +367,7 @@ async def safe_send(client, messages, source_id):
 
     valid_messages = [m for m in messages if not m.poll and not (m.photo and is_screenshot(m.photo))]
     if not valid_messages:
+        print(f"⏭️ All media were screenshots/polls, skipping ID {messages[0].id}")
         return
 
     main_msg = valid_messages[0]
@@ -385,7 +386,12 @@ async def safe_send(client, messages, source_id):
     current_num = channel_counters.get(counter_key, 0) + 1
 
     retail_text = build_text(raw_caption, source_id, msg_date, current_num)
+    
+    # طباعة تشخيصية بسيطة لكل منشور حقيقي
+    print(f"📤 ID {messages[0].id} | media: {len(valid_messages)} | caption: {'yes' if raw_caption else 'no'} | text: {'yes' if retail_text else 'no'}")
+    
     if retail_text is None:
+        print("⛔ Post blocked by BLOCK_KEYWORDS")
         mark_msg_as_processed(messages[0].id, source_id)
         return
 
@@ -407,7 +413,7 @@ async def safe_send(client, messages, source_id):
     except FloodWait as e:
         await asyncio.sleep(e.value)
     except Exception as e:
-        print(f"❌ Error in safe_send: {e}")
+        print(f"❌ Error in safe_send (ID {messages[0].id}): {e}")
 
 async def fetch_history(client):
     print(f"🚀 Scanning history...")
@@ -438,9 +444,7 @@ async def fetch_history(client):
         print(f"📦 {channel}: {len(all_items)} posts/groups")
         for idx, item in enumerate(all_items):
             try:
-                print(f"➡️ Starting post {idx+1}/{len(all_items)} (first ID: {item[0].id})")
                 await safe_send(client, item, channel)
-                print(f"✅ Finished post {idx+1}/{len(all_items)}")
             except Exception as e:
                 print(f"❌ Failed to send post {idx+1}/{len(all_items)}: {e}")
                 traceback.print_exc()
