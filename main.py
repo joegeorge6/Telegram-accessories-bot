@@ -275,12 +275,12 @@ def build_text(original_text, source_id, msg_date, current_num):
 
     norm_text = "\n".join(new_lines)
 
+    # منطق المنتج الواحد
+    single_price_line = None
     if len(labeled_prices) == 1:
         price_val = labeled_prices[0][1].split('💰')[1].split(' ج')[0]
         single_price_line = f"بسعر : 💰 {price_val} ج 🔥"
         labeled_prices = []
-    else:
-        single_price_line = None
 
     cleaned_lines = []
     for line in norm_text.split('\n'):
@@ -337,7 +337,13 @@ def build_text(original_text, source_id, msg_date, current_num):
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     my_code = f"{prefix}{current_num:02d}{today_str}"
 
-    parts = [description, "", f"الكود : 🔖 {my_code}"]
+    # بناء الناتج النهائي حسب الحالات
+    parts = [description]
+    
+    # إضافة الكود فقط إذا كان هناك وصف أو أي سعر
+    if description or labeled_prices or single_price_line:
+        parts.append("")
+        parts.append(f"الكود : 🔖 {my_code}")
     
     if single_price_line:
         parts.append(single_price_line)
@@ -345,9 +351,12 @@ def build_text(original_text, source_id, msg_date, current_num):
         parts.extend([lp[1] for lp in labeled_prices])
     else:
         found_price_val = extract_real_price(original_text)
-        final_price_val = RETAIL_MAPPING.get(found_price_val, "")
-        price_str_ar = convert_to_arabic_numbers(final_price_val)
-        parts.append(f"السعر : 💰 {price_str_ar} ج 🔥")
+        if found_price_val is not None:
+            final_price_val = RETAIL_MAPPING.get(found_price_val, "")
+            if final_price_val:
+                price_str_ar = convert_to_arabic_numbers(final_price_val)
+                parts.append(f"السعر : 💰 {price_str_ar} ج 🔥")
+            # إذا لم يوجد سعر محول، لا نضيف شيئاً
 
     return "\n".join(parts)
 
@@ -387,7 +396,6 @@ async def safe_send(client, messages, source_id):
 
     retail_text = build_text(raw_caption, source_id, msg_date, current_num)
     
-    # طباعة تشخيصية بسيطة لكل منشور حقيقي
     print(f"📤 ID {messages[0].id} | media: {len(valid_messages)} | caption: {'yes' if raw_caption else 'no'} | text: {'yes' if retail_text else 'no'}")
     
     if retail_text is None:
