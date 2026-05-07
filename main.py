@@ -1,3 +1,6 @@
+# Retail Pro Bot - Version 2.2.0
+# إصلاح: الصورة التي تحمل سعراً فقط أصبحت تظهر بالكود والسعر.
+
 import os
 import re
 import asyncio
@@ -154,7 +157,6 @@ def extract_real_price(text):
     if cart_match:
         return int(cart_match.group(1))
 
-    # أضفنا "سعو" إلى جانب الكلمات الأخرى التي تدل على السعر
     price_match = re.search(r'(?:سعو|الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match:
         return int(price_match.group(1))
@@ -227,7 +229,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     i = 0
     while i < len(lines):
         line = lines[i].strip()
-        # أضفنا "سعو" إلى الكلمات المستبعدة من اعتبار السطر اسم منتج
         if line and not re.search(r'\d', line) and not re.search(r'(?:جملة|جمله|اونلاين|online|بسعر|سعر|السعر|سعو)', line, re.IGNORECASE):
             j = i + 1
             while j < len(lines):
@@ -277,7 +278,6 @@ def build_text(original_text, source_id, msg_date, current_num):
 
     norm_text = "\n".join(new_lines)
 
-    # منطق المنتج الواحد
     single_price_line = None
     if len(labeled_prices) == 1:
         price_val = labeled_prices[0][1].split('💰')[1].split(' ج')[0]
@@ -305,7 +305,6 @@ def build_text(original_text, source_id, msg_date, current_num):
             if 15 <= num <= 2000:
                 line = re.sub(r'^\d+\s+', '', line).strip()
 
-        # أضفنا "سعو" إلى الكلمات التي تمسح ما بعدها
         line = re.sub(r'(?:بسعر|السعر|سعر|price|سعو|قطعه|قطعة|أونلاين|online|اقل من).*', '', line, flags=re.IGNORECASE).strip()
         line = re.sub(r'\s*ب\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
         line = re.sub(r'[:：]?\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
@@ -340,30 +339,39 @@ def build_text(original_text, source_id, msg_date, current_num):
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     my_code = f"{prefix}{current_num:02d}{today_str}"
 
-    # بناء الناتج النهائي حسب الحالات
-    parts = [description]
+    # بناء الأجزاء النهائية
+    parts = [description] if description else []
     
-    # إضافة الكود فقط إذا كان هناك وصف أو أي سعر
-    if description or labeled_prices or single_price_line:
-        parts.append("")
+    # نحدد ما إذا كان لدينا أي سعر (مسمى أو عام)
+    has_any_price = bool(labeled_prices or single_price_line)
+    found_price_val = None
+    if not has_any_price:
+        found_price_val = extract_real_price(original_text)
+        if found_price_val is not None:
+            has_any_price = True
+
+    # إذا كان هناك أي سعر، نضيف الكود
+    if has_any_price:
+        if parts:
+            parts.append("")
         parts.append(f"الكود : 🔖 {my_code}")
-    
+    # إذا لم يكن هناك سعر ولكن يوجد وصف فقط، الكود لا يظهر (نص عادي)
+    # إذا لم يكن هناك وصف ولا سعر، لن يظهر شيء
+
     if single_price_line:
         parts.append(single_price_line)
     elif labeled_prices:
         parts.extend([lp[1] for lp in labeled_prices])
-    else:
-        found_price_val = extract_real_price(original_text)
-        if found_price_val is not None:
-            final_price_val = RETAIL_MAPPING.get(found_price_val, "")
-            if final_price_val:
-                price_str_ar = convert_to_arabic_numbers(final_price_val)
-                parts.append(f"السعر : 💰 {price_str_ar} ج 🔥")
+    elif found_price_val is not None:
+        final_price_val = RETAIL_MAPPING.get(found_price_val, "")
+        if final_price_val:
+            price_str_ar = convert_to_arabic_numbers(final_price_val)
+            parts.append(f"السعر : 💰 {price_str_ar} ج 🔥")
 
     return "\n".join(parts)
 
 # ==========================================
-# 3. نظام النشر (مع طباعة تشخيصية خفيفة)
+# 3. نظام النشر (مع إصلاح استهلاك الكود)
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -414,6 +422,7 @@ async def safe_send(client, messages, source_id):
 
         if retail_text != "":
             await client.send_message(RETAIL_CHANNEL, retail_text)
+            # نحفظ الكود دائماً عند إرسال نص (لأنه سيحتوي على كود الآن في حالة وجود سعر)
             if raw_caption:
                 channel_counters[counter_key] = current_num
                 save_counter(counter_key, current_num)
