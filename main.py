@@ -154,7 +154,8 @@ def extract_real_price(text):
     if cart_match:
         return int(cart_match.group(1))
 
-    price_match = re.search(r'(?:الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
+    # أضفنا "سعو" إلى جانب الكلمات الأخرى التي تدل على السعر
+    price_match = re.search(r'(?:سعو|الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match:
         return int(price_match.group(1))
 
@@ -226,7 +227,8 @@ def build_text(original_text, source_id, msg_date, current_num):
     i = 0
     while i < len(lines):
         line = lines[i].strip()
-        if line and not re.search(r'\d', line) and not re.search(r'(?:جملة|جمله|اونلاين|online|بسعر|سعر|السعر)', line, re.IGNORECASE):
+        # أضفنا "سعو" إلى الكلمات المستبعدة من اعتبار السطر اسم منتج
+        if line and not re.search(r'\d', line) and not re.search(r'(?:جملة|جمله|اونلاين|online|بسعر|سعر|السعر|سعو)', line, re.IGNORECASE):
             j = i + 1
             while j < len(lines):
                 next_line = lines[j].strip()
@@ -262,7 +264,7 @@ def build_text(original_text, source_id, msg_date, current_num):
         match = re.search(r'([\u0600-\u06FF\w]+)\s*[:：]\s*(\d+)\s*(?:ج|LE|L\.E|egp|جنيه)?', line, re.IGNORECASE)
         if match:
             label_part = match.group(1)
-            if label_part.lower() in ["سعر", "السعر", "جملة", "جمله", "اونلاين", "online"]:
+            if label_part.lower() in ["سعر", "السعر", "جملة", "جمله", "اونلاين", "online", "سعو"]:
                 new_lines.append(line)
                 continue
             price = int(match.group(2))
@@ -303,7 +305,8 @@ def build_text(original_text, source_id, msg_date, current_num):
             if 15 <= num <= 2000:
                 line = re.sub(r'^\d+\s+', '', line).strip()
 
-        line = re.sub(r'(?:السعر|سعر|price|بسعر|قطعه|قطعة|أونلاين|online|اقل من).*', '', line, flags=re.IGNORECASE).strip()
+        # أضفنا "سعو" إلى الكلمات التي تمسح ما بعدها
+        line = re.sub(r'(?:بسعر|السعر|سعر|price|سعو|قطعه|قطعة|أونلاين|online|اقل من).*', '', line, flags=re.IGNORECASE).strip()
         line = re.sub(r'\s*ب\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
         line = re.sub(r'[:：]?\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
 
@@ -356,7 +359,6 @@ def build_text(original_text, source_id, msg_date, current_num):
             if final_price_val:
                 price_str_ar = convert_to_arabic_numbers(final_price_val)
                 parts.append(f"السعر : 💰 {price_str_ar} ج 🔥")
-            # إذا لم يوجد سعر محول، لا نضيف شيئاً
 
     return "\n".join(parts)
 
