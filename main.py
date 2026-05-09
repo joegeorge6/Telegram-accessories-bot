@@ -1,5 +1,5 @@
-# Retail Pro Bot - Version 2.2.0
-# إصلاح: الصورة التي تحمل سعراً فقط أصبحت تظهر بالكود والسعر.
+# Retail Pro Bot - Version 2.2.4
+# تعديل: توسيع المرحلة 0 لدعم "سعر السلسه: 45" بنقطتين.
 
 import os
 import re
@@ -13,7 +13,7 @@ from flask import Flask
 from threading import Thread
 
 # ==========================================
-# 1. الإعدادات الأساسية
+# 1. الإعدادات الأساسية (بدون تغيير)
 # ==========================================
 API_ID = int(os.environ.get("API_ID", "10182970"))
 API_HASH = os.environ.get("API_HASH", "0f4e456fc8101e8be8e0dad6aeb87041")
@@ -220,12 +220,30 @@ def build_text(original_text, source_id, msg_date, current_num):
     norm_text = re.sub(r'(?:استانليس|استنانليس|استالنس)', 'استانلس', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\bبلاتيد\b', 'بليتد', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\bزركون\b', 'زيركون', norm_text, flags=re.IGNORECASE)
+    norm_text = re.sub(r'ختم\s*AS', '', norm_text, flags=re.IGNORECASE)
 
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
 
     labeled_prices = []
     lines = norm_text.split('\n')
+    
+    # --- المرحلة 0: معالجة نمط "سعر السلسه 45" (مع أو بدون نقطتين) ---
+    new_lines_0 = []
+    for line in lines:
+        # النمط المُحسَّن: يدعم "سعر السلسه 45" و "سعر السلسه: 45"
+        match = re.search(r'(?:سعر|السعر)\s+([\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
+        if match:
+            label = match.group(1)
+            price = int(match.group(2))
+            retail_price = RETAIL_MAPPING.get(price, price)
+            arabic_price = convert_to_arabic_numbers(retail_price)
+            labeled_prices.append((label, f"{label} بسعر : 💰 {arabic_price} ج 🔥"))
+            continue  # حذف السطر
+        new_lines_0.append(line)
+    lines = new_lines_0
+
+    # --- المرحلة 1: معالجة الأنماط (اسم متبوع بـ جملة/اونلاين) ---
     i = 0
     while i < len(lines):
         line = lines[i].strip()
@@ -256,34 +274,51 @@ def build_text(original_text, source_id, msg_date, current_num):
 
     norm_text = "\n".join(lines)
 
+    # --- المرحلة 2: معالجة الأسعار المسماة العامة (باستخدام ":" أو "：" أو "فراشه احمر 75") ---
     new_lines = []
     for line in norm_text.split('\n'):
-        if re.search(r'(?:جملة|جمله|اونلاين|online)', line, re.IGNORECASE):
+        # تخطي الأسطر التي تحتوي على كلمات سعرية صريحة (ستحذف لاحقاً)
+        if re.search(r'(?:جملة|جمله|اونلاين|online|بسعر)', line, re.IGNORECASE):
             new_lines.append(line)
             continue
 
-        match = re.search(r'([\u0600-\u06FF\w]+)\s*[:：]\s*(\d+)\s*(?:ج|LE|L\.E|egp|جنيه)?', line, re.IGNORECASE)
-        if match:
-            label_part = match.group(1)
+        # نمط "اسم : رقم"
+        match_colon = re.search(r'([\u0600-\u06FF\w]+)\s*[:：]\s*(\d+)\s*(?:ج|LE|L\.E|egp|جنيه)?', line, re.IGNORECASE)
+        if match_colon:
+            label_part = match_colon.group(1)
             if label_part.lower() in ["سعر", "السعر", "جملة", "جمله", "اونلاين", "online", "سعو"]:
                 new_lines.append(line)
                 continue
-            price = int(match.group(2))
+            price = int(match_colon.group(2))
             retail_price = RETAIL_MAPPING.get(price, price)
             arabic_price = convert_to_arabic_numbers(retail_price)
-            formatted = f"{label_part} بسعر : 💰 {arabic_price} ج 🔥"
-            labeled_prices.append((label_part, formatted))
+            labeled_prices.append((label_part, f"{label_part} بسعر : 💰 {arabic_price} ج 🔥"))
             continue
+
+        # نمط "اسم + رقم" في نهاية السطر (بدون "سعر" أو "اونلاين" أو "جملة")
+        if not re.search(r'(?:سعر|السعر|جملة|جمله|اونلاين|online|قطعه|قطعة|بسعر|سعو)', line, re.IGNORECASE):
+            match_end = re.search(r'^([\u0600-\u06FF\w\s]+?)\s+(\d{2,4})\s*$', line)
+            if match_end:
+                label_part = match_end.group(1).strip()
+                if label_part:
+                    price = int(match_end.group(2))
+                    if 15 <= price <= 2000:
+                        retail_price = RETAIL_MAPPING.get(price, price)
+                        arabic_price = convert_to_arabic_numbers(retail_price)
+                        labeled_prices.append((label_part, f"{label_part} بسعر : 💰 {arabic_price} ج 🔥"))
+                        continue
         new_lines.append(line)
 
     norm_text = "\n".join(new_lines)
 
+    # --- منطق المنتج الواحد ---
     single_price_line = None
     if len(labeled_prices) == 1:
         price_val = labeled_prices[0][1].split('💰')[1].split(' ج')[0]
         single_price_line = f"بسعر : 💰 {price_val} ج 🔥"
         labeled_prices = []
 
+    # --- تنظيف النص المتبقي ---
     cleaned_lines = []
     for line in norm_text.split('\n'):
         line = line.strip()
@@ -339,10 +374,8 @@ def build_text(original_text, source_id, msg_date, current_num):
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     my_code = f"{prefix}{current_num:02d}{today_str}"
 
-    # بناء الأجزاء النهائية
     parts = [description] if description else []
     
-    # نحدد ما إذا كان لدينا أي سعر (مسمى أو عام)
     has_any_price = bool(labeled_prices or single_price_line)
     found_price_val = None
     if not has_any_price:
@@ -350,13 +383,10 @@ def build_text(original_text, source_id, msg_date, current_num):
         if found_price_val is not None:
             has_any_price = True
 
-    # إذا كان هناك أي سعر، نضيف الكود
     if has_any_price:
         if parts:
             parts.append("")
         parts.append(f"الكود : 🔖 {my_code}")
-    # إذا لم يكن هناك سعر ولكن يوجد وصف فقط، الكود لا يظهر (نص عادي)
-    # إذا لم يكن هناك وصف ولا سعر، لن يظهر شيء
 
     if single_price_line:
         parts.append(single_price_line)
@@ -371,7 +401,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     return "\n".join(parts)
 
 # ==========================================
-# 3. نظام النشر (مع إصلاح استهلاك الكود)
+# 3. نظام النشر (بدون تغيير)
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -422,7 +452,6 @@ async def safe_send(client, messages, source_id):
 
         if retail_text != "":
             await client.send_message(RETAIL_CHANNEL, retail_text)
-            # نحفظ الكود دائماً عند إرسال نص (لأنه سيحتوي على كود الآن في حالة وجود سعر)
             if raw_caption:
                 channel_counters[counter_key] = current_num
                 save_counter(counter_key, current_num)
@@ -472,7 +501,7 @@ async def fetch_history(client):
     print("✅ History finished.")
 
 # ==========================================
-# 4. تشغيل البوت
+# 4. تشغيل البوت (بدون تغيير)
 # ==========================================
 app = Client("retail_bot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
 
