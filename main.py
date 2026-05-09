@@ -1,5 +1,5 @@
-# Retail Pro Bot - Version 2.2.4
-# تعديل: توسيع المرحلة 0 لدعم "سعر السلسه: 45" بنقطتين.
+# Retail Pro Bot - Version 2.2.5
+# إصلاح: منع نمط "سعر الدسته" من الظهور كسعر مسمى، وضمان حذفه بالكامل.
 
 import os
 import re
@@ -231,10 +231,13 @@ def build_text(original_text, source_id, msg_date, current_num):
     # --- المرحلة 0: معالجة نمط "سعر السلسه 45" (مع أو بدون نقطتين) ---
     new_lines_0 = []
     for line in lines:
-        # النمط المُحسَّن: يدعم "سعر السلسه 45" و "سعر السلسه: 45"
         match = re.search(r'(?:سعر|السعر)\s+([\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
         if match:
             label = match.group(1)
+            # ✅ منع "دسته/دستة" من الظهور كسعر مسمى
+            if re.search(r'(?:دسته|دستة)', label, re.IGNORECASE):
+                new_lines_0.append(line)
+                continue
             price = int(match.group(2))
             retail_price = RETAIL_MAPPING.get(price, price)
             arabic_price = convert_to_arabic_numbers(retail_price)
@@ -277,7 +280,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     # --- المرحلة 2: معالجة الأسعار المسماة العامة (باستخدام ":" أو "：" أو "فراشه احمر 75") ---
     new_lines = []
     for line in norm_text.split('\n'):
-        # تخطي الأسطر التي تحتوي على كلمات سعرية صريحة (ستحذف لاحقاً)
         if re.search(r'(?:جملة|جمله|اونلاين|online|بسعر)', line, re.IGNORECASE):
             new_lines.append(line)
             continue
