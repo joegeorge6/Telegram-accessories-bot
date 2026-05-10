@@ -1,5 +1,5 @@
-# Retail Pro Bot - Version 2.2.7
-# إصلاح جذري: منع المرحلة 0 من التقاط أسعار الجملة/الدستة كأسعار مسمّاة.
+# Retail Pro Bot - Version 2.2.8
+# إصلاح: معالجة FloodWait لكل وسيط منفرداً وإعادة المحاولة، مع إظهار التنبيه في السجلات.
 
 import os
 import re
@@ -235,7 +235,6 @@ def build_text(original_text, source_id, msg_date, current_num):
             match = re.search(r'(?:سعر|السعر)\s+([\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
             if match:
                 label = match.group(1)
-                # ✅ تجاهل تمامًا إذا احتوى السطر على كلمات جملة/جمله/دسته/دستة
                 if re.search(r'(?:دسته|دستة|جملة|جمله)', line, re.IGNORECASE):
                     new_lines_0.append(line)
                     continue
@@ -405,7 +404,7 @@ def build_text(original_text, source_id, msg_date, current_num):
         return ""
 
 # ==========================================
-# 3. نظام النشر (مع حماية إضافية)
+# 3. نظام النشر (مع معالجة FloodWait لكل صورة)
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -450,25 +449,45 @@ async def safe_send(client, messages, source_id):
         mark_msg_as_processed(messages[0].id, source_id)
         return
 
-    try:
-        for m in valid_messages:
-            if m.photo: await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
-            elif m.video: await client.send_video(RETAIL_CHANNEL, m.video.file_id)
-            elif m.animation: await client.send_animation(RETAIL_CHANNEL, m.animation.file_id)
-            await asyncio.sleep(2)
+    # إرسال الوسائط مع معالجة FloodWait لكل وسيط
+    for m in valid_messages:
+        while True:
+            try:
+                if m.photo:
+                    await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
+                elif m.video:
+                    await client.send_video(RETAIL_CHANNEL, m.video.file_id)
+                elif m.animation:
+                    await client.send_animation(RETAIL_CHANNEL, m.animation.file_id)
+                await asyncio.sleep(2)
+                break  # نجاح، اخرج من حلقة المحاولة
+            except FloodWait as e:
+                print(f"⏳ FloodWait {e.value}s, waiting...")
+                await asyncio.sleep(e.value + 5)
+                # سيُعاد المحاولة تلقائياً
+            except Exception as e:
+                print(f"❌ Failed to send media {m.id}: {e}")
+                break  # فشل دائم، تخطى هذا الوسيط
 
-        if retail_text != "":
+    if retail_text != "":
+        try:
             await client.send_message(RETAIL_CHANNEL, retail_text)
+        except FloodWait as e:
+            print(f"⏳ FloodWait on text: {e.value}s")
+            await asyncio.sleep(e.value + 5)
+            try:
+                await client.send_message(RETAIL_CHANNEL, retail_text)
+            except:
+                pass
+        except Exception as e:
+            print(f"❌ Text send failed: {e}")
+        else:
             if raw_caption:
                 channel_counters[counter_key] = current_num
                 save_counter(counter_key, current_num)
 
-        mark_msg_as_processed(messages[0].id, source_id)
-        await asyncio.sleep(3)
-    except FloodWait as e:
-        await asyncio.sleep(e.value)
-    except Exception as e:
-        print(f"❌ Error in safe_send (ID {messages[0].id}): {e}")
+    mark_msg_as_processed(messages[0].id, source_id)
+    await asyncio.sleep(3)
 
 async def fetch_history(client):
     print(f"🚀 Scanning history...")
