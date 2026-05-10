@@ -1,5 +1,5 @@
-# Retail Pro Bot - Version 2.3.3
-# تعديل جوهري: الكلمات الممنوعة تُحذف من النص بدلاً من حظر المنشور بالكامل.
+# Retail Pro Bot - Version 2.3.4
+# تعديل: إعادة حذف أسطر "للحجز" و "طلب الاوردر" بالكامل كما كان سابقاً.
 
 import os
 import re
@@ -212,7 +212,7 @@ def build_text(original_text, source_id, msg_date, current_num):
         
         norm_text = normalize_numbers(original_text)
 
-        # ✅ التعديل الجوهري: حذف الكلمات الممنوعة بدلاً من إرجاع None
+        # ✅ حذف الكلمات الممنوعة من النص (بدلاً من حظر المنشور)
         for word in BLOCK_KEYWORDS:
             norm_text = re.sub(re.escape(word), '', norm_text, flags=re.IGNORECASE)
 
@@ -330,6 +330,9 @@ def build_text(original_text, source_id, msg_date, current_num):
             if re.search(r'(?:أونلاين|اونلاين|online)', line, re.IGNORECASE): continue
             if re.search(r'بكام', line, re.IGNORECASE): continue
             if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
+                continue
+            # ✅ إعادة حذف أسطر الحجز كاملة
+            if re.search(r'(?:للحجز|طلب الاوردر)', line, re.IGNORECASE):
                 continue
 
             if re.match(r'^(\d{2,4})\s+', line):
