@@ -1,12 +1,12 @@
-# Retail Pro Bot - Version 2.3.0
-# أساس: v2.2.5 (مع جميع ميزاته)
-# تعديل: إضافة معالجة FloodWait لكل وسيط (كما في v2.2.8)
+# Retail Pro Bot - Version 2.3.1
+# تعديل: إضافة تشخيص تفصيلي (مع flush=True) لمعرفة سبب عدم إرسال الصور المصحوبة بنص
 
 import os
 import re
 import asyncio
 import json
 import traceback
+import sys
 from datetime import datetime, timezone, timedelta
 from pyrogram import Client, filters, idle
 from pyrogram.errors import FloodWait
@@ -14,7 +14,7 @@ from flask import Flask
 from threading import Thread
 
 # ==========================================
-# 1. الإعدادات الأساسية (بدون تغيير)
+# 1. الإعدادات الأساسية
 # ==========================================
 API_ID = int(os.environ.get("API_ID", "10182970"))
 API_HASH = os.environ.get("API_HASH", "0f4e456fc8101e8be8e0dad6aeb87041")
@@ -400,12 +400,12 @@ def build_text(original_text, source_id, msg_date, current_num):
         return "\n".join(parts)
 
     except Exception as e:
-        print(f"❌ Error in build_text for ID {current_num}: {e}")
+        print(f"❌ Error in build_text for ID {current_num}: {e}", flush=True)
         traceback.print_exc()
         return ""
 
 # ==========================================
-# 3. نظام النشر (مع معالجة FloodWait لكل صورة)
+# 3. نظام النشر (مع تشخيص تفصيلي)
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -420,7 +420,7 @@ async def safe_send(client, messages, source_id):
 
     valid_messages = [m for m in messages if not m.poll and not (m.photo and is_screenshot(m.photo))]
     if not valid_messages:
-        print(f"⏭️ All media were screenshots/polls, skipping ID {messages[0].id}")
+        print(f"⏭️ All media were screenshots/polls, skipping ID {messages[0].id}", flush=True)
         return
 
     main_msg = valid_messages[0]
@@ -443,15 +443,16 @@ async def safe_send(client, messages, source_id):
     except:
         retail_text = ""
     
-    print(f"📤 ID {messages[0].id} | media: {len(valid_messages)} | caption: {'yes' if raw_caption else 'no'} | text: {'yes' if retail_text else 'no'}")
+    print(f"📤 ID {messages[0].id} | media: {len(valid_messages)} | caption: {'yes' if raw_caption else 'no'} | text: {'yes' if retail_text else 'no'}", flush=True)
     
     if retail_text is None:
-        print("⛔ Post blocked by BLOCK_KEYWORDS")
+        print("⛔ Post blocked by BLOCK_KEYWORDS", flush=True)
         mark_msg_as_processed(messages[0].id, source_id)
         return
 
-    # إرسال الوسائط مع معالجة FloodWait لكل وسيط
-    for m in valid_messages:
+    # إرسال الوسائط مع معالجة FloodWait لكل وسيط وتشخيص
+    for idx, m in enumerate(valid_messages):
+        print(f"   ➡️ Sending media {idx+1}/{len(valid_messages)} (type: {m.media}, id: {m.id})", flush=True)
         while True:
             try:
                 if m.photo:
@@ -461,27 +462,30 @@ async def safe_send(client, messages, source_id):
                 elif m.animation:
                     await client.send_animation(RETAIL_CHANNEL, m.animation.file_id)
                 await asyncio.sleep(2)
-                break  # نجاح، اخرج من حلقة المحاولة
+                print(f"   ✅ Media {idx+1} sent", flush=True)
+                break
             except FloodWait as e:
-                print(f"⏳ FloodWait {e.value}s, waiting...")
+                print(f"   ⏳ FloodWait {e.value}s, waiting...", flush=True)
                 await asyncio.sleep(e.value + 5)
-                # سيُعاد المحاولة تلقائياً
             except Exception as e:
-                print(f"❌ Failed to send media {m.id}: {e}")
-                break  # فشل دائم، تخطى هذا الوسيط
+                print(f"   ❌ Failed to send media {m.id}: {e}", flush=True)
+                break
 
     if retail_text != "":
+        print(f"   📝 Sending text...", flush=True)
         try:
             await client.send_message(RETAIL_CHANNEL, retail_text)
+            print(f"   ✅ Text sent", flush=True)
         except FloodWait as e:
-            print(f"⏳ FloodWait on text: {e.value}s")
+            print(f"   ⏳ FloodWait on text: {e.value}s", flush=True)
             await asyncio.sleep(e.value + 5)
             try:
                 await client.send_message(RETAIL_CHANNEL, retail_text)
-            except:
-                pass
+                print(f"   ✅ Text sent after wait", flush=True)
+            except Exception as e2:
+                print(f"   ❌ Text send failed after wait: {e2}", flush=True)
         except Exception as e:
-            print(f"❌ Text send failed: {e}")
+            print(f"   ❌ Text send failed: {e}", flush=True)
         else:
             if raw_caption:
                 channel_counters[counter_key] = current_num
@@ -491,7 +495,7 @@ async def safe_send(client, messages, source_id):
     await asyncio.sleep(3)
 
 async def fetch_history(client):
-    print(f"🚀 Scanning history...")
+    print(f"🚀 Scanning history...", flush=True)
     for channel in SOURCE_CHANNELS:
         all_items, group_processed = [], set()
         count = 0
@@ -499,7 +503,7 @@ async def fetch_history(client):
             m_date = msg.date.replace(tzinfo=timezone.utc)
             count += 1
             if count % 200 == 0:
-                print(f"⏳ {channel}: {m_date.strftime('%Y-%m-%d')}")
+                print(f"⏳ {channel}: {m_date.strftime('%Y-%m-%d')}", flush=True)
             if m_date < START_DATE: break
             if (END_DATE_LIMIT and m_date > END_DATE_LIMIT) or is_msg_processed(msg.id, channel):
                 continue
@@ -516,15 +520,15 @@ async def fetch_history(client):
                 all_items.append([msg])
 
         all_items.reverse()
-        print(f"📦 {channel}: {len(all_items)} posts/groups")
+        print(f"📦 {channel}: {len(all_items)} posts/groups", flush=True)
         for item in all_items:
             try:
                 await safe_send(client, item, channel)
             except Exception as e:
-                print(f"❌ Failed to send post from {channel}: {e}")
+                print(f"❌ Failed to send post from {channel}: {e}", flush=True)
                 if item:
                     mark_msg_as_processed(item[0].id, channel)
-    print("✅ History finished.")
+    print("✅ History finished.", flush=True)
 
 # ==========================================
 # 4. تشغيل البوت
@@ -576,7 +580,7 @@ async def start_bot():
         db_file = get_db_file(channel_id)
         if os.path.exists(db_file):
             os.remove(db_file)
-            print(f"♻️ تم حذف ملف الذاكرة للقناة: {channel_id}")
+            print(f"♻️ تم حذف ملف الذاكرة للقناة: {channel_id}", flush=True)
 
     await app.start()
     asyncio.create_task(fetch_history(app))
@@ -584,12 +588,12 @@ async def start_bot():
 
 if __name__ == "__main__":
     try:
-        print("🚀 بدء التطبيق...")
+        print("🚀 بدء التطبيق...", flush=True)
         port = int(os.environ.get("PORT", 8000))
         Thread(target=lambda: web_app.run(host="0.0.0.0", port=port, debug=False)).start()
         app.run(start_bot())
     except Exception as e:
-        print(f"💥 فشل بدء التشغيل: {e}")
+        print(f"💥 فشل بدء التشغيل: {e}", flush=True)
         traceback.print_exc()
         while True:
             import time as _time
