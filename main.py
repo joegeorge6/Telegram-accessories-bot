@@ -1,5 +1,5 @@
-# Retail Pro Bot - Version 2.3.6
-# تعديل: قص جزئية "ب + رقم + ج" من السطر بدلاً من حذف السطر بالكامل.
+# Retail Pro Bot - Version 2.3.7
+# تعديل: تجاهل الرقم الوصفي في "استانلس بيور 316" أثناء استخراج السعر العام.
 
 import os
 import re
@@ -162,11 +162,18 @@ def extract_real_price(text):
     if price_match:
         return int(price_match.group(1))
 
+    # سعر الجملة (له أولوية أقل من الأونلاين)
     wholesale_match = re.search(r'(?:الجمله|الجملة|جمله|جملة)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if wholesale_match:
         return int(wholesale_match.group(1))
 
-    nums = [int(n) for n in re.findall(r'(\d+)', clean_for_search) if 15 <= int(n) <= 2000]
+    # ✅ التعديل الجوهري: نستبعد الأرقام التي تلي "استانلس بيور" أو "ستانلس بيور" مباشرة
+    tmp_text = clean_for_search
+    # إزالة "استانلس بيور" أو "ستانلس بيور" وما يليها من رقم من الحساب النهائي
+    tmp_text = re.sub(r'(?:استانلس|ستانلس)\s+بيور\s+\d+', '', tmp_text, flags=re.IGNORECASE)
+
+    # الأرقام المتبقية في النطاق المسموح (تستخدم لإيجاد السعر العام)
+    nums = [int(n) for n in re.findall(r'(\d+)', tmp_text) if 15 <= int(n) <= 2000]
     return nums[-1] if nums else None
 
 def is_emoji_only(text):
@@ -331,10 +338,10 @@ def build_text(original_text, source_id, msg_date, current_num):
             if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
                 continue
 
-            # ✅ قص جزئية "ب + رقم + ج" من السطر (بدلاً من حذف السطر)
             if re.search(r'\s*ب\s*[:：]?\s*\d+\s*ج', line, re.IGNORECASE):
                 line = re.sub(r'\s*ب\s*[:：]?\s*\d+\s*ج.*', '', line, flags=re.IGNORECASE).strip()
 
+            # إزالة الرقم الافتتاحي إن كان سعرًا
             if re.match(r'^(\d{2,4})\s+', line):
                 num = int(re.match(r'^(\d{2,4})', line).group(1))
                 if 15 <= num <= 2000:
@@ -350,6 +357,7 @@ def build_text(original_text, source_id, msg_date, current_num):
             if line == "ال":
                 continue
 
+            # نحافظ على النصوص القصيرة جداً إن كانت مفيدة
             if len(line) <= 3 and not re.search(r'[A-Za-z\u0600-\u06FF]', line):
                 continue
             if line and len(line.split()) == 1 and not re.search(r'[\u0600-\u06FF]', line):
@@ -374,6 +382,7 @@ def build_text(original_text, source_id, msg_date, current_num):
         prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
         my_code = f"{prefix}{current_num:02d}{today_str}"
 
+        # ✅ بناء الناتج النهائي
         parts = [description] if description else []
         
         has_any_price = bool(labeled_prices or single_price_line)
@@ -404,6 +413,8 @@ def build_text(original_text, source_id, msg_date, current_num):
         print(f"❌ Error in build_text for ID {current_num}: {e}", flush=True)
         traceback.print_exc()
         return ""
+
+# ... (باقي الكود مثل safe_send و fetch_history بدون تغيير) ...
 
 # ==========================================
 # 3. نظام النشر (مع معالجة FloodWait لكل صورة)
