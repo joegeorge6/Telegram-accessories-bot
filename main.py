@@ -1,5 +1,5 @@
-# Retail Pro Bot - Version 2.3.4
-# تعديل: إعادة حذف أسطر "للحجز" و "طلب الاوردر" بالكامل كما كان سابقاً.
+# Retail Pro Bot - Version 2.3.6
+# تعديل: قص جزئية "ب + رقم + ج" من السطر بدلاً من حذف السطر بالكامل.
 
 import os
 import re
@@ -212,7 +212,6 @@ def build_text(original_text, source_id, msg_date, current_num):
         
         norm_text = normalize_numbers(original_text)
 
-        # ✅ حذف الكلمات الممنوعة من النص (بدلاً من حظر المنشور)
         for word in BLOCK_KEYWORDS:
             norm_text = re.sub(re.escape(word), '', norm_text, flags=re.IGNORECASE)
 
@@ -331,9 +330,10 @@ def build_text(original_text, source_id, msg_date, current_num):
             if re.search(r'بكام', line, re.IGNORECASE): continue
             if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
                 continue
-            # ✅ إعادة حذف أسطر الحجز كاملة
-            if re.search(r'(?:للحجز|طلب الاوردر)', line, re.IGNORECASE):
-                continue
+
+            # ✅ قص جزئية "ب + رقم + ج" من السطر (بدلاً من حذف السطر)
+            if re.search(r'\s*ب\s*[:：]?\s*\d+\s*ج', line, re.IGNORECASE):
+                line = re.sub(r'\s*ب\s*[:：]?\s*\d+\s*ج.*', '', line, flags=re.IGNORECASE).strip()
 
             if re.match(r'^(\d{2,4})\s+', line):
                 num = int(re.match(r'^(\d{2,4})', line).group(1))
@@ -446,7 +446,6 @@ async def safe_send(client, messages, source_id):
     
     print(f"📤 ID {messages[0].id} | media: {len(valid_messages)} | caption: {'yes' if raw_caption else 'no'} | text: {'yes' if retail_text else 'no'}", flush=True)
 
-    # إرسال الوسائط دائماً (حتى لو كان النص فارغاً أو None)
     for idx, m in enumerate(valid_messages):
         print(f"   ➡️ Sending media {idx+1}/{len(valid_messages)} (type: {m.media}, id: {m.id})", flush=True)
         while True:
