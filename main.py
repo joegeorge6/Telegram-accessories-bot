@@ -1,5 +1,5 @@
-# Retail Pro Bot - Version 2.3.9
-# تعديل: تحسين حذف الكلمات الممنوعة (BLOCK_KEYWORDS) لمنع بقاء أي أثر لها.
+# Retail Pro Bot - Version 2.3.10
+# تعديل: توسيع نمط "عرض خاص" ليلتقط "عرض خااااااص" واستخراج سعره.
 
 import os
 import re
@@ -150,7 +150,8 @@ def extract_real_price(text):
     norm_text = normalize_numbers(text)
     clean_for_search = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر|شكل|لون|ق)', '', norm_text, flags=re.IGNORECASE)
 
-    special_offer = re.search(r'عرض\s+خاص\s*(\d+)', clean_for_search, re.IGNORECASE)
+    # ✅ توسيع النمط: عرض + خاااااص (أي عدد من الألف) + رقم
+    special_offer = re.search(r'عرض\s+خا+ص\s*(\d+)', clean_for_search, re.IGNORECASE)
     if special_offer:
         return int(special_offer.group(1))
 
@@ -213,9 +214,7 @@ def build_text(original_text, source_id, msg_date, current_num):
         
         norm_text = normalize_numbers(original_text)
 
-        # ✅ تحسين حذف الكلمات الممنوعة: نبني نمطاً لكل كلمة ونحذفها مع ما حولها من مسافات
         for word in BLOCK_KEYWORDS:
-            # إنشاء نمط يطابق الكلمة ككل (مع تجاهل المسافات البيضاء قبلها وبعدها)
             pattern = r'\s*' + re.escape(word) + r'\s*'
             norm_text = re.sub(pattern, ' ', norm_text, flags=re.IGNORECASE)
 
