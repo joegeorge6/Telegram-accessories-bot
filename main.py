@@ -1,5 +1,5 @@
-# Retail Pro Bot - Version 2.3.11
-# تعديل: استخراج اسم القطعة الصحيح من بداية السطر في نمط "سلسله ... سعر القطعه 130".
+# Retail Pro Bot - Version 2.3.12
+# تعديل: منع أي منشور يحتوي على رابط tiktok.com بالكامل (لا نص ولا صور).
 
 import os
 import re
@@ -208,8 +208,11 @@ def build_text(original_text, source_id, msg_date, current_num):
     try:
         if not original_text: return ""
         
+        # منع أي منشور يحتوي على رابط تيك توك بالكامل
+        if re.search(r'tiktok\.com', original_text, re.IGNORECASE):
+            return None
         if re.search(r'HEMA\s*STORE', original_text, re.IGNORECASE):
-            return ""
+            return None
         
         norm_text = normalize_numbers(original_text)
 
@@ -236,20 +239,16 @@ def build_text(original_text, source_id, msg_date, current_num):
         # --- المرحلة 0: معالجة نمط "سلسله شيك اوى سعر القطعه 130" ---
         new_lines_0 = []
         for line in lines:
-            # تجاهل أسطر "سعر الطقم كامل"
             if re.search(r'طقم\s+كامل', line, re.IGNORECASE):
                 new_lines_0.append(line)
                 continue
 
-            # نحاول استخراج اسم القطعة من بداية السطر
             prefix_match = re.match(r'^(.*?)\s*(?:سعر|السعر)\s+([\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
             if prefix_match:
                 prefix_text = prefix_match.group(1).strip()
                 if prefix_text:
-                    # نأخذ الكلمة الأولى من النص الذي يسبق "سعر" كاسم للقطعة
                     label = prefix_text.split()[0]
                 else:
-                    # لو لم يسبقها شيء، استخدم الكلمة التي بعد "سعر" (مثل "القطعه")
                     label = prefix_match.group(2)
                 price = int(prefix_match.group(3))
                 if re.search(r'(?:دسته|دستة)', label, re.IGNORECASE):
@@ -260,7 +259,6 @@ def build_text(original_text, source_id, msg_date, current_num):
                 labeled_prices.append((label, f"{label} بسعر : 💰 {arabic_price} ج 🔥"))
                 continue
 
-            # الاحتياط: نمط "سعر ..." بدون نص سابق
             match = re.search(r'(?:سعر|السعر)\s+([\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
             if match:
                 label = match.group(1)
@@ -272,7 +270,6 @@ def build_text(original_text, source_id, msg_date, current_num):
                 arabic_price = convert_to_arabic_numbers(retail_price)
                 labeled_prices.append((label, f"{label} بسعر : 💰 {arabic_price} ج 🔥"))
                 continue
-
             new_lines_0.append(line)
         lines = new_lines_0
 
@@ -307,7 +304,7 @@ def build_text(original_text, source_id, msg_date, current_num):
 
         norm_text = "\n".join(lines)
 
-        # --- المرحلة 2: معالجة الأسعار المسماة العامة (باستخدام ":" أو "：" أو "فراشه احمر 75") ---
+        # --- المرحلة 2: معالجة الأسعار المسماة العامة ---
         new_lines = []
         for line in norm_text.split('\n'):
             if re.search(r'(?:جملة|جمله|اونلاين|online|بسعر)', line, re.IGNORECASE):
@@ -472,6 +469,11 @@ async def safe_send(client, messages, source_id):
         retail_text = ""
     
     print(f"📤 ID {messages[0].id} | media: {len(valid_messages)} | caption: {'yes' if raw_caption else 'no'} | text: {'yes' if retail_text else 'no'}", flush=True)
+    
+    if retail_text is None:
+        print("⛔ Post blocked (TikTok link or HEMA STORE)", flush=True)
+        mark_msg_as_processed(messages[0].id, source_id)
+        return
 
     for idx, m in enumerate(valid_messages):
         print(f"   ➡️ Sending media {idx+1}/{len(valid_messages)} (type: {m.media}, id: {m.id})", flush=True)
