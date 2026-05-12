@@ -1,5 +1,5 @@
-# Retail Pro Bot - Version 2.3.12
-# تعديل: منع أي منشور يحتوي على رابط tiktok.com بالكامل (لا نص ولا صور).
+# Retail Pro Bot - Version 2.3.13
+# تعديل: إضافة "للحجز وطلب الاوردر" إلى الكلمات الممنوعة (تُحذف من النص).
 
 import os
 import re
@@ -50,7 +50,8 @@ BLOCK_KEYWORDS = [
     "طريقه الحجز",
     "ممنوع تبعت اى سؤال على شات الحجز",
     "للحجز والاستفسار",
-    "01011461515"
+    "01011461515",
+    "للحجز وطلب الاوردر"  # ✅ العبارة المضافة
 ]
 
 P_CODE_TRANSLATION = {
@@ -208,7 +209,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     try:
         if not original_text: return ""
         
-        # منع أي منشور يحتوي على رابط تيك توك بالكامل
         if re.search(r'tiktok\.com', original_text, re.IGNORECASE):
             return None
         if re.search(r'HEMA\s*STORE', original_text, re.IGNORECASE):
@@ -236,7 +236,6 @@ def build_text(original_text, source_id, msg_date, current_num):
         labeled_prices = []
         lines = norm_text.split('\n')
         
-        # --- المرحلة 0: معالجة نمط "سلسله شيك اوى سعر القطعه 130" ---
         new_lines_0 = []
         for line in lines:
             if re.search(r'طقم\s+كامل', line, re.IGNORECASE):
@@ -273,7 +272,6 @@ def build_text(original_text, source_id, msg_date, current_num):
             new_lines_0.append(line)
         lines = new_lines_0
 
-        # --- المرحلة 1: معالجة الأنماط (اسم متبوع بـ جملة/اونلاين) ---
         i = 0
         while i < len(lines):
             line = lines[i].strip()
@@ -304,7 +302,6 @@ def build_text(original_text, source_id, msg_date, current_num):
 
         norm_text = "\n".join(lines)
 
-        # --- المرحلة 2: معالجة الأسعار المسماة العامة ---
         new_lines = []
         for line in norm_text.split('\n'):
             if re.search(r'(?:جملة|جمله|اونلاين|online|بسعر)', line, re.IGNORECASE):
