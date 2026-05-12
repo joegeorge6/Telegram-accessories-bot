@@ -1,5 +1,5 @@
-# Retail Pro Bot - Version 2.3.10
-# تعديل: توسيع نمط "عرض خاص" ليلتقط "عرض خااااااص" واستخراج سعره.
+# Retail Pro Bot - Version 2.3.11
+# تعديل: استخراج اسم القطعة الصحيح من بداية السطر في نمط "سلسله ... سعر القطعه 130".
 
 import os
 import re
@@ -150,7 +150,6 @@ def extract_real_price(text):
     norm_text = normalize_numbers(text)
     clean_for_search = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر|شكل|لون|ق)', '', norm_text, flags=re.IGNORECASE)
 
-    # ✅ توسيع النمط: عرض + خاااااص (أي عدد من الألف) + رقم
     special_offer = re.search(r'عرض\s+خا+ص\s*(\d+)', clean_for_search, re.IGNORECASE)
     if special_offer:
         return int(special_offer.group(1))
@@ -234,9 +233,34 @@ def build_text(original_text, source_id, msg_date, current_num):
         labeled_prices = []
         lines = norm_text.split('\n')
         
-        # --- المرحلة 0: معالجة نمط "سعر السلسه 45" (مع أو بدون نقطتين) ---
+        # --- المرحلة 0: معالجة نمط "سلسله شيك اوى سعر القطعه 130" ---
         new_lines_0 = []
         for line in lines:
+            # تجاهل أسطر "سعر الطقم كامل"
+            if re.search(r'طقم\s+كامل', line, re.IGNORECASE):
+                new_lines_0.append(line)
+                continue
+
+            # نحاول استخراج اسم القطعة من بداية السطر
+            prefix_match = re.match(r'^(.*?)\s*(?:سعر|السعر)\s+([\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
+            if prefix_match:
+                prefix_text = prefix_match.group(1).strip()
+                if prefix_text:
+                    # نأخذ الكلمة الأولى من النص الذي يسبق "سعر" كاسم للقطعة
+                    label = prefix_text.split()[0]
+                else:
+                    # لو لم يسبقها شيء، استخدم الكلمة التي بعد "سعر" (مثل "القطعه")
+                    label = prefix_match.group(2)
+                price = int(prefix_match.group(3))
+                if re.search(r'(?:دسته|دستة)', label, re.IGNORECASE):
+                    new_lines_0.append(line)
+                    continue
+                retail_price = RETAIL_MAPPING.get(price, price)
+                arabic_price = convert_to_arabic_numbers(retail_price)
+                labeled_prices.append((label, f"{label} بسعر : 💰 {arabic_price} ج 🔥"))
+                continue
+
+            # الاحتياط: نمط "سعر ..." بدون نص سابق
             match = re.search(r'(?:سعر|السعر)\s+([\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
             if match:
                 label = match.group(1)
@@ -248,6 +272,7 @@ def build_text(original_text, source_id, msg_date, current_num):
                 arabic_price = convert_to_arabic_numbers(retail_price)
                 labeled_prices.append((label, f"{label} بسعر : 💰 {arabic_price} ج 🔥"))
                 continue
+
             new_lines_0.append(line)
         lines = new_lines_0
 
