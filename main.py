@@ -1,5 +1,5 @@
-# Retail Pro Bot - Version 2.3.13
-# تعديل: إضافة "للحجز وطلب الاوردر" إلى الكلمات الممنوعة (تُحذف من النص).
+# Retail Pro Bot - Version 2.3.14
+# تعديل: إعطاء الأولوية لـ "عرض خاص" العادي (بدون حروف ألف مكررة) قبل "عرض خاااااص".
 
 import os
 import re
@@ -51,7 +51,7 @@ BLOCK_KEYWORDS = [
     "ممنوع تبعت اى سؤال على شات الحجز",
     "للحجز والاستفسار",
     "01011461515",
-    "للحجز وطلب الاوردر"  # ✅ العبارة المضافة
+    "للحجز وطلب الاوردر"
 ]
 
 P_CODE_TRANSLATION = {
@@ -151,22 +151,32 @@ def extract_real_price(text):
     norm_text = normalize_numbers(text)
     clean_for_search = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر|شكل|لون|ق)', '', norm_text, flags=re.IGNORECASE)
 
-    special_offer = re.search(r'عرض\s+خا+ص\s*(\d+)', clean_for_search, re.IGNORECASE)
+    # 1. عرض خاص (النمط العادي)
+    special_offer = re.search(r'عرض\s+خاص\s*(\d+)', clean_for_search, re.IGNORECASE)
     if special_offer:
         return int(special_offer.group(1))
 
+    # 2. عرض خاااااص (حروف ألف مكررة)
+    long_offer = re.search(r'عرض\s+خا+ص\s*(\d+)', clean_for_search, re.IGNORECASE)
+    if long_offer:
+        return int(long_offer.group(1))
+
+    # 3. الكارت
     cart_match = re.search(r'(?:الكارت كله|الكارت)\s*ب\s*(\d+)', clean_for_search, re.IGNORECASE)
     if cart_match:
         return int(cart_match.group(1))
 
+    # 4. الأسعار العادية (اونلاين، سعر القطعه، إلخ)
     price_match = re.search(r'(?:سعو|الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match:
         return int(price_match.group(1))
 
+    # 5. الجملة
     wholesale_match = re.search(r'(?:الجمله|الجملة|جمله|جملة)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if wholesale_match:
         return int(wholesale_match.group(1))
 
+    # 6. أي أرقام متبقية
     tmp_text = re.sub(r'(?:استانلس|ستانلس)\s+بيور\s+\d+', '', clean_for_search, flags=re.IGNORECASE)
     nums = [int(n) for n in re.findall(r'(\d+)', tmp_text) if 15 <= int(n) <= 2000]
     return nums[-1] if nums else None
