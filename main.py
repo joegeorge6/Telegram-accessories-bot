@@ -1,12 +1,8 @@
-# Retail Pro Bot - Version 2.3.14
-# تعديل: إعطاء الأولوية لـ "عرض خاص" العادي (بدون حروف ألف مكررة) قبل "عرض خاااااص".
-
 import os
 import re
 import asyncio
 import json
 import traceback
-import sys
 from datetime import datetime, timezone, timedelta
 from pyrogram import Client, filters, idle
 from pyrogram.errors import FloodWait
@@ -21,6 +17,7 @@ API_HASH = os.environ.get("API_HASH", "0f4e456fc8101e8be8e0dad6aeb87041")
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
 
 RETAIL_CHANNEL = "@girlsfashionesta"
+DB_FILE = "processed_msgs.txt"
 COUNTERS_FILE = "counters.json"
 
 CAIRO_OFFSET = int(os.environ.get("TIMEZONE_OFFSET", "3"))
@@ -42,16 +39,7 @@ BLOCK_KEYWORDS = [
     "حجز الخواتم ب اسكرين من الفيديو علشان هيبان فيه الشروط",
     "تعالو تيك توك هوريكو شغل دهب اللهم بارك ♥️",
     "جارى التصوير والتسعير 💥💥💥💥",
-    "جرد شهر شروط الحجز",
-    "الساده العملاء الكرام اهلا وسهلا بكم",
-    "شرووط الحجز",
-    "ارقام الحجز",
-    "ممنوع الاتصال عبر الوتساب",
-    "طريقه الحجز",
-    "ممنوع تبعت اى سؤال على شات الحجز",
-    "للحجز والاستفسار",
-    "01011461515",
-    "للحجز وطلب الاوردر"
+    "مطلوب شباب للعمل بشرط التفرغ \nويكون قريب من النزهه الجديده \nمواعيد العمل من 12 ل 11 \nيوم الاحد اجازه اسبوعيه \nللاستفسارات 01091714149"
 ]
 
 P_CODE_TRANSLATION = {
@@ -115,15 +103,7 @@ RETAIL_MAPPING = { 15: 45, 20: 50, 25: 55, 30: 60, 35: 65, 40: 70, 45: 75, 50: 8
 # 2. المساعدات
 # ==========================================
 channel_counters = load_counters()
-SUPPLIER_PREFIX_MAP = {
-    "aymanelawamy123": "A", "sasaaccessories": "S", "ayselstore55": "AS",
-    "miyokowatches22": "M", -1001443297771: "P", -1001448553593: "I",
-    -1001682055192: "H"
-}
-
-def get_db_file(channel_id):
-    safe_name = str(channel_id).replace("-", "n").replace("@", "").replace("/", "_")
-    return f"processed_{safe_name}.txt"
+SUPPLIER_PREFIX_MAP = {"aymanelawamy123": "A", "sasaaccessories": "S", "ayselstore55": "AS", "miyokowatches22": "M", -1001132261086: "P", -1001448553593: "I", -1001682055192: "H"}
 
 def is_screenshot(photo):
     if not photo: return False
@@ -134,16 +114,13 @@ def is_screenshot(photo):
         return False
 
 def is_msg_processed(msg_id, source_id):
-    db_file = get_db_file(source_id)
-    if not os.path.exists(db_file):
-        return False
+    if not os.path.exists(DB_FILE): return False
     search_key = f"{source_id}:{msg_id}"
-    with open(db_file, "r") as f:
+    with open(DB_FILE, "r") as f:
         return search_key in f.read().splitlines()
 
 def mark_msg_as_processed(msg_id, source_id):
-    db_file = get_db_file(source_id)
-    with open(db_file, "a") as f:
+    with open(DB_FILE, "a") as f:
         f.write(f"{source_id}:{msg_id}\n")
 
 def extract_real_price(text):
@@ -151,34 +128,23 @@ def extract_real_price(text):
     norm_text = normalize_numbers(text)
     clean_for_search = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر|شكل|لون|ق)', '', norm_text, flags=re.IGNORECASE)
 
-    # 1. عرض خاص (النمط العادي)
     special_offer = re.search(r'عرض\s+خاص\s*(\d+)', clean_for_search, re.IGNORECASE)
     if special_offer:
         return int(special_offer.group(1))
 
-    # 2. عرض خاااااص (حروف ألف مكررة)
-    long_offer = re.search(r'عرض\s+خا+ص\s*(\d+)', clean_for_search, re.IGNORECASE)
-    if long_offer:
-        return int(long_offer.group(1))
-
-    # 3. الكارت
     cart_match = re.search(r'(?:الكارت كله|الكارت)\s*ب\s*(\d+)', clean_for_search, re.IGNORECASE)
     if cart_match:
         return int(cart_match.group(1))
 
-    # 4. الأسعار العادية (اونلاين، سعر القطعه، إلخ)
-    price_match = re.search(r'(?:سعو|الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
+    price_match = re.search(r'(?:الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match:
         return int(price_match.group(1))
 
-    # 5. الجملة
     wholesale_match = re.search(r'(?:الجمله|الجملة|جمله|جملة)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if wholesale_match:
         return int(wholesale_match.group(1))
 
-    # 6. أي أرقام متبقية
-    tmp_text = re.sub(r'(?:استانلس|ستانلس)\s+بيور\s+\d+', '', clean_for_search, flags=re.IGNORECASE)
-    nums = [int(n) for n in re.findall(r'(\d+)', tmp_text) if 15 <= int(n) <= 2000]
+    nums = [int(n) for n in re.findall(r'(\d+)', clean_for_search) if 15 <= int(n) <= 2000]
     return nums[-1] if nums else None
 
 def is_emoji_only(text):
@@ -216,228 +182,115 @@ def is_number_emoji_line(line):
     return False
 
 def build_text(original_text, source_id, msg_date, current_num):
-    try:
-        if not original_text: return ""
-        
-        if re.search(r'tiktok\.com', original_text, re.IGNORECASE):
-            return None
-        if re.search(r'HEMA\s*STORE', original_text, re.IGNORECASE):
-            return None
-        
-        norm_text = normalize_numbers(original_text)
+    if not original_text: return ""
+    
+    if re.search(r'HEMA\s*STORE', original_text, re.IGNORECASE):
+        return ""
+    
+    norm_text = normalize_numbers(original_text)
 
-        for word in BLOCK_KEYWORDS:
-            pattern = r'\s*' + re.escape(word) + r'\s*'
-            norm_text = re.sub(pattern, ' ', norm_text, flags=re.IGNORECASE)
+    if any(word in norm_text for word in BLOCK_KEYWORDS): return None
 
-        if is_emoji_only(norm_text):
-            return ""
-
-        norm_text = re.sub(r'infinity', 'فاشونيستا', norm_text, flags=re.IGNORECASE)
-        norm_text = re.sub(r'(?:استالس|ستالس)', 'استانلس', norm_text, flags=re.IGNORECASE)
-        norm_text = re.sub(r'(?:استانليس|استنانليس|استالنس)', 'استانلس', norm_text, flags=re.IGNORECASE)
-        norm_text = re.sub(r'\bبلاتيد\b', 'بليتد', norm_text, flags=re.IGNORECASE)
-        norm_text = re.sub(r'\bزركون\b', 'زيركون', norm_text, flags=re.IGNORECASE)
-        norm_text = re.sub(r'ختم\s*AS', '', norm_text, flags=re.IGNORECASE)
-
-        for word in WORDS_TO_REMOVE:
-            norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
-
-        labeled_prices = []
-        lines = norm_text.split('\n')
-        
-        new_lines_0 = []
-        for line in lines:
-            if re.search(r'طقم\s+كامل', line, re.IGNORECASE):
-                new_lines_0.append(line)
-                continue
-
-            prefix_match = re.match(r'^(.*?)\s*(?:سعر|السعر)\s+([\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
-            if prefix_match:
-                prefix_text = prefix_match.group(1).strip()
-                if prefix_text:
-                    label = prefix_text.split()[0]
-                else:
-                    label = prefix_match.group(2)
-                price = int(prefix_match.group(3))
-                if re.search(r'(?:دسته|دستة)', label, re.IGNORECASE):
-                    new_lines_0.append(line)
-                    continue
-                retail_price = RETAIL_MAPPING.get(price, price)
-                arabic_price = convert_to_arabic_numbers(retail_price)
-                labeled_prices.append((label, f"{label} بسعر : 💰 {arabic_price} ج 🔥"))
-                continue
-
-            match = re.search(r'(?:سعر|السعر)\s+([\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
-            if match:
-                label = match.group(1)
-                if re.search(r'(?:دسته|دستة)', label, re.IGNORECASE):
-                    new_lines_0.append(line)
-                    continue
-                price = int(match.group(2))
-                retail_price = RETAIL_MAPPING.get(price, price)
-                arabic_price = convert_to_arabic_numbers(retail_price)
-                labeled_prices.append((label, f"{label} بسعر : 💰 {arabic_price} ج 🔥"))
-                continue
-            new_lines_0.append(line)
-        lines = new_lines_0
-
-        i = 0
-        while i < len(lines):
-            line = lines[i].strip()
-            if line and not re.search(r'\d', line) and not re.search(r'(?:جملة|جمله|اونلاين|online|بسعر|سعر|السعر|سعو)', line, re.IGNORECASE):
-                j = i + 1
-                while j < len(lines):
-                    next_line = lines[j].strip()
-                    if not next_line:
-                        j += 1
-                        continue
-                    if re.search(r'(?:اونلاين|online)\s*(\d+)', next_line, re.IGNORECASE):
-                        price_match = re.search(r'(\d+)', next_line)
-                        if price_match:
-                            price = int(price_match.group(1))
-                            retail_price = RETAIL_MAPPING.get(price, price)
-                            arabic_price = convert_to_arabic_numbers(retail_price)
-                            labeled_prices.append((line, f"{line} بسعر : 💰 {arabic_price} ج 🔥"))
-                        del lines[i+1:j+1]
-                        break
-                    elif re.search(r'(?:جمله|جملة)', next_line, re.IGNORECASE):
-                        j += 1
-                        continue
-                    else:
-                        break
-                i += 1
-            else:
-                i += 1
-
-        norm_text = "\n".join(lines)
-
-        new_lines = []
-        for line in norm_text.split('\n'):
-            if re.search(r'(?:جملة|جمله|اونلاين|online|بسعر)', line, re.IGNORECASE):
-                new_lines.append(line)
-                continue
-
-            match_colon = re.search(r'([\u0600-\u06FF\w]+)\s*[:：]\s*(\d+)\s*(?:ج|LE|L\.E|egp|جنيه)?', line, re.IGNORECASE)
-            if match_colon:
-                label_part = match_colon.group(1)
-                if label_part.lower() in ["سعر", "السعر", "جملة", "جمله", "اونلاين", "online", "سعو"]:
-                    new_lines.append(line)
-                    continue
-                price = int(match_colon.group(2))
-                retail_price = RETAIL_MAPPING.get(price, price)
-                arabic_price = convert_to_arabic_numbers(retail_price)
-                labeled_prices.append((label_part, f"{label_part} بسعر : 💰 {arabic_price} ج 🔥"))
-                continue
-
-            if not re.search(r'(?:سعر|السعر|جملة|جمله|اونلاين|online|قطعه|قطعة|بسعر|سعو)', line, re.IGNORECASE):
-                match_end = re.search(r'^([\u0600-\u06FF\w\s]+?)\s+(\d{2,4})\s*$', line)
-                if match_end:
-                    label_part = match_end.group(1).strip()
-                    if label_part:
-                        price = int(match_end.group(2))
-                        if 15 <= price <= 2000:
-                            retail_price = RETAIL_MAPPING.get(price, price)
-                            arabic_price = convert_to_arabic_numbers(retail_price)
-                            labeled_prices.append((label_part, f"{label_part} بسعر : 💰 {arabic_price} ج 🔥"))
-                            continue
-            new_lines.append(line)
-
-        norm_text = "\n".join(new_lines)
-
-        single_price_line = None
-        if len(labeled_prices) == 1:
-            price_val = labeled_prices[0][1].split('💰')[1].split(' ج')[0]
-            single_price_line = f"بسعر : 💰 {price_val} ج 🔥"
-            labeled_prices = []
-
-        cleaned_lines = []
-        for line in norm_text.split('\n'):
-            line = line.strip()
-            if not line or re.match(r'^[A-Z]+\d+.*$', line, re.IGNORECASE): continue
-            
-            if re.search(r'(?:الكارت|كارت).*ب\s*\d+\s*ج', line, re.IGNORECASE): continue
-            if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار).*']): continue
-            if re.search(r'(?:أونلاين|اونلاين|online)', line, re.IGNORECASE): continue
-            if re.search(r'بكام', line, re.IGNORECASE): continue
-            if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
-                continue
-
-            if re.search(r'\s*ب\s*[:：]?\s*\d+\s*ج', line, re.IGNORECASE):
-                line = re.sub(r'\s*ب\s*[:：]?\s*\d+\s*ج.*', '', line, flags=re.IGNORECASE).strip()
-
-            if re.match(r'^(\d{2,4})\s+', line):
-                num = int(re.match(r'^(\d{2,4})', line).group(1))
-                if 15 <= num <= 2000:
-                    line = re.sub(r'^\d+\s+', '', line).strip()
-
-            line = re.sub(r'(?:بسعر|السعر|سعر|price|سعو|قطعه|قطعة|أونلاين|online|اقل من).*', '', line, flags=re.IGNORECASE).strip()
-            line = re.sub(r'\s*ب\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
-            line = re.sub(r'[:：]?\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
-
-            if is_number_emoji_line(line):
-                continue
-
-            if line == "ال":
-                continue
-
-            if len(line) <= 3 and not re.search(r'[A-Za-z\u0600-\u06FF]', line):
-                continue
-            if line and len(line.split()) == 1 and not re.search(r'[\u0600-\u06FF]', line):
-                continue
-
-            if line: cleaned_lines.append(line)
-
-        description = "\n".join(cleaned_lines)
-        
-        code_match = re.search(r'([A-Z]+)\d+', normalize_numbers(original_text), re.IGNORECASE)
-        original_code_prefix = code_match.group(1).upper() if code_match else ""
-
-        has_arabic = any('\u0600' <= c <= '\u06FF' for c in original_text)
-        if not has_arabic and original_code_prefix in P_CODE_TRANSLATION:
-            item_name = P_CODE_TRANSLATION[original_code_prefix]
-            description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
-
-        cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
-        msg_date_cairo = msg_date.astimezone(cairo_tz)
-        today_str = msg_date_cairo.strftime("%d%m")
-        
-        prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
-        my_code = f"{prefix}{current_num:02d}{today_str}"
-
-        parts = [description] if description else []
-        
-        has_any_price = bool(labeled_prices or single_price_line)
-        found_price_val = None
-        if not has_any_price:
-            found_price_val = extract_real_price(original_text)
-            if found_price_val is not None:
-                has_any_price = True
-
-        if has_any_price:
-            if parts:
-                parts.append("")
-            parts.append(f"الكود : 🔖 {my_code}")
-
-        if single_price_line:
-            parts.append(single_price_line)
-        elif labeled_prices:
-            parts.extend([lp[1] for lp in labeled_prices])
-        elif found_price_val is not None:
-            final_price_val = RETAIL_MAPPING.get(found_price_val, "")
-            if final_price_val:
-                price_str_ar = convert_to_arabic_numbers(final_price_val)
-                parts.append(f"السعر : 💰 {price_str_ar} ج 🔥")
-
-        return "\n".join(parts)
-
-    except Exception as e:
-        print(f"❌ Error in build_text for ID {current_num}: {e}", flush=True)
-        traceback.print_exc()
+    if is_emoji_only(norm_text):
         return ""
 
+    norm_text = re.sub(r'\binfinity\b', 'فاشونيستا', norm_text, flags=re.IGNORECASE)
+    norm_text = re.sub(r'(?:استالس|ستالس)', 'استانلس', norm_text, flags=re.IGNORECASE)
+    norm_text = re.sub(r'\bبلاتيد\b', 'بليتد', norm_text, flags=re.IGNORECASE)
+    norm_text = re.sub(r'\bزركون\b', 'زيركون', norm_text, flags=re.IGNORECASE)
+
+    for word in WORDS_TO_REMOVE:
+        norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
+
+    labeled_prices = []
+    lines = norm_text.split('\n')
+    new_lines = []
+    for line in lines:
+        if re.search(r'(?:جملة|جمله|اونلاين|online)', line, re.IGNORECASE):
+            new_lines.append(line)
+            continue
+
+        match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]\s*(\d+)', line, re.IGNORECASE)
+        if match:
+            label_part = match.group(1)
+            price = int(match.group(2))
+            retail_price = RETAIL_MAPPING.get(price, price)
+            arabic_price = convert_to_arabic_numbers(retail_price)
+            formatted = f"{label_part}: 💰 {arabic_price} ج 🔥"
+            labeled_prices.append(formatted)
+            continue
+        new_lines.append(line)
+
+    norm_text = "\n".join(new_lines)
+
+    cleaned_lines = []
+    for line in norm_text.split('\n'):
+        line = line.strip()
+        if not line or re.match(r'^[A-Z]+\d+.*$', line, re.IGNORECASE): continue
+        
+        if re.search(r'(?:الكارت|كارت).*ب\s*\d+\s*ج', line, re.IGNORECASE): continue
+        if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار).*']): continue
+        if re.search(r'(?:أونلاين|اونلاين|online)', line, re.IGNORECASE): continue
+        if re.search(r'بكام', line, re.IGNORECASE): continue
+
+        if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
+            continue
+
+        if re.search(r'(?:للحجز|طلب الاوردر|للطلب)', line, re.IGNORECASE):
+            continue
+
+        if re.search(r'\b01\d{9}\b', line):
+            continue
+
+        if re.match(r'^(\d{2,4})\s+', line):
+            num = int(re.match(r'^(\d{2,4})', line).group(1))
+            if 15 <= num <= 2000:
+                line = re.sub(r'^\d+\s+', '', line).strip()
+
+        line = re.sub(r'(?:السعر|سعر|price|بسعر|قطعه|قطعة|أونلاين|online|اقل من).*', '', line, flags=re.IGNORECASE).strip()
+        line = re.sub(r'\s*ب\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
+        line = re.sub(r'[:：]?\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
+
+        if is_number_emoji_line(line):
+            continue
+
+        if line and len(line.split()) == 1 and not any(c.isascii() and c.isalpha() for c in line):
+            continue
+        if len(line) <= 3 and not any(c.isascii() and c.isalpha() for c in line):
+            continue
+
+        if line: cleaned_lines.append(line)
+
+    description = "\n".join(cleaned_lines)
+    
+    code_match = re.search(r'([A-Z]+)\d+', normalize_numbers(original_text), re.IGNORECASE)
+    original_code_prefix = code_match.group(1).upper() if code_match else ""
+
+    if not any(c.isalpha() or '\u0600' <= c <= '\u06FF' for c in original_text) and original_code_prefix in P_CODE_TRANSLATION:
+        item_name = P_CODE_TRANSLATION[original_code_prefix]
+        description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
+
+    cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
+    msg_date_cairo = msg_date.astimezone(cairo_tz)
+    today_str = msg_date_cairo.strftime("%d%m")
+    
+    prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
+    my_code = f"{prefix}{current_num:02d}{today_str}"
+
+    parts = [description, "", f"الكود : 🔖 {my_code}"]
+    
+    if labeled_prices:
+        parts.extend(labeled_prices)
+    else:
+        found_price_val = extract_real_price(original_text)
+        final_price_val = RETAIL_MAPPING.get(found_price_val, "")
+        price_str_ar = convert_to_arabic_numbers(final_price_val)
+        parts.append(f"السعر : 💰 {price_str_ar} ج 🔥")
+
+    return "\n".join(parts)
+
 # ==========================================
-# 3. نظام النشر (مع معالجة FloodWait لكل صورة)
+# 3. نظام النشر
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -452,7 +305,6 @@ async def safe_send(client, messages, source_id):
 
     valid_messages = [m for m in messages if not m.poll and not (m.photo and is_screenshot(m.photo))]
     if not valid_messages:
-        print(f"⏭️ All media were screenshots/polls, skipping ID {messages[0].id}", flush=True)
         return
 
     main_msg = valid_messages[0]
@@ -470,63 +322,38 @@ async def safe_send(client, messages, source_id):
 
     current_num = channel_counters.get(counter_key, 0) + 1
 
-    try:
-        retail_text = build_text(raw_caption, source_id, msg_date, current_num)
-    except:
-        retail_text = ""
-    
-    print(f"📤 ID {messages[0].id} | media: {len(valid_messages)} | caption: {'yes' if raw_caption else 'no'} | text: {'yes' if retail_text else 'no'}", flush=True)
-    
+    retail_text = build_text(raw_caption, source_id, msg_date, current_num)
     if retail_text is None:
-        print("⛔ Post blocked (TikTok link or HEMA STORE)", flush=True)
         mark_msg_as_processed(messages[0].id, source_id)
         return
 
-    for idx, m in enumerate(valid_messages):
-        print(f"   ➡️ Sending media {idx+1}/{len(valid_messages)} (type: {m.media}, id: {m.id})", flush=True)
-        while True:
-            try:
-                if m.photo:
-                    await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
-                elif m.video:
-                    await client.send_video(RETAIL_CHANNEL, m.video.file_id)
-                elif m.animation:
-                    await client.send_animation(RETAIL_CHANNEL, m.animation.file_id)
-                await asyncio.sleep(2)
-                print(f"   ✅ Media {idx+1} sent", flush=True)
-                break
-            except FloodWait as e:
-                print(f"   ⏳ FloodWait {e.value}s, waiting...", flush=True)
-                await asyncio.sleep(e.value + 5)
-            except Exception as e:
-                print(f"   ❌ Failed to send media {m.id}: {e}", flush=True)
-                break
+    if retail_text == "":
+        print("📝 [DEBUG] retail_text empty, sending media only")
 
-    if retail_text:
-        print(f"   📝 Sending text...", flush=True)
-        try:
+    try:
+        media_count = len(valid_messages)
+        print(f"📤 Sending group of {media_count} media, ID {messages[0].id}, Code: {current_num:02d}")
+        for m in valid_messages:
+            if m.photo: await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
+            elif m.video: await client.send_video(RETAIL_CHANNEL, m.video.file_id)
+            elif m.animation: await client.send_animation(RETAIL_CHANNEL, m.animation.file_id)
+            await asyncio.sleep(2)
+
+        if retail_text != "":
             await client.send_message(RETAIL_CHANNEL, retail_text)
-            print(f"   ✅ Text sent", flush=True)
-        except FloodWait as e:
-            print(f"   ⏳ FloodWait on text: {e.value}s", flush=True)
-            await asyncio.sleep(e.value + 5)
-            try:
-                await client.send_message(RETAIL_CHANNEL, retail_text)
-                print(f"   ✅ Text sent after wait", flush=True)
-            except Exception as e2:
-                print(f"   ❌ Text send failed after wait: {e2}", flush=True)
-        except Exception as e:
-            print(f"   ❌ Text send failed: {e}", flush=True)
-        else:
             if raw_caption:
                 channel_counters[counter_key] = current_num
                 save_counter(counter_key, current_num)
 
-    mark_msg_as_processed(messages[0].id, source_id)
-    await asyncio.sleep(3)
+        mark_msg_as_processed(messages[0].id, source_id)
+        await asyncio.sleep(3)
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+    except Exception as e:
+        print(f"❌ Error: {e}")
 
 async def fetch_history(client):
-    print(f"🚀 Scanning history...", flush=True)
+    print(f"🚀 Scanning history...")
     for channel in SOURCE_CHANNELS:
         all_items, group_processed = [], set()
         count = 0
@@ -534,7 +361,7 @@ async def fetch_history(client):
             m_date = msg.date.replace(tzinfo=timezone.utc)
             count += 1
             if count % 200 == 0:
-                print(f"⏳ {channel}: {m_date.strftime('%Y-%m-%d')}", flush=True)
+                print(f"⏳ {channel}: {m_date.strftime('%Y-%m-%d')}")
             if m_date < START_DATE: break
             if (END_DATE_LIMIT and m_date > END_DATE_LIMIT) or is_msg_processed(msg.id, channel):
                 continue
@@ -551,15 +378,10 @@ async def fetch_history(client):
                 all_items.append([msg])
 
         all_items.reverse()
-        print(f"📦 {channel}: {len(all_items)} posts/groups", flush=True)
+        print(f"📦 {channel}: {len(all_items)} posts/groups")
         for item in all_items:
-            try:
-                await safe_send(client, item, channel)
-            except Exception as e:
-                print(f"❌ Failed to send post from {channel}: {e}", flush=True)
-                if item:
-                    mark_msg_as_processed(item[0].id, channel)
-    print("✅ History finished.", flush=True)
+            await safe_send(client, item, channel)
+    print("✅ History finished.")
 
 # ==========================================
 # 4. تشغيل البوت
@@ -584,7 +406,8 @@ async def main_handler(client, message):
         try:
             msgs = await client.get_media_group(message.chat.id, message.id)
             await safe_send(client, msgs, message.chat.id)
-        except: pass
+        except:
+            pass
         finally:
             client._recent_groups.discard(message.media_group_id)
     else:
@@ -593,38 +416,24 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Bot is running!"
+    return "Retail Pro Bot v2.3.15 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-
-    reset_channel = os.environ.get("RESET_CHANNEL", "").strip()
-    if reset_channel:
-        try:
-            if reset_channel.startswith("-"):
-                channel_id = int(reset_channel)
-            else:
-                channel_id = reset_channel
-        except:
-            channel_id = reset_channel
-        db_file = get_db_file(channel_id)
-        if os.path.exists(db_file):
-            os.remove(db_file)
-            print(f"♻️ تم حذف ملف الذاكرة للقناة: {channel_id}", flush=True)
-
+    print("🚀 Retail Pro Bot v2.3.15 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
 
 if __name__ == "__main__":
     try:
-        print("🚀 بدء التطبيق...", flush=True)
+        print("🚀 بدء التطبيق...")
         port = int(os.environ.get("PORT", 8000))
         Thread(target=lambda: web_app.run(host="0.0.0.0", port=port, debug=False)).start()
         app.run(start_bot())
     except Exception as e:
-        print(f"💥 فشل بدء التشغيل: {e}", flush=True)
+        print(f"💥 فشل بدء التشغيل: {e}")
         traceback.print_exc()
         while True:
             import time as _time
