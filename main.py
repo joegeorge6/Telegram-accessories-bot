@@ -202,14 +202,15 @@ def build_text(original_text, source_id, msg_date, current_num):
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
 
-    # استخراج السعر العام مبكراً
+    # استخراج السعر العام مبكراً (قد لا يُستخدم إذا وُجدت أسعار مسماة)
     found_price_val = extract_real_price(original_text)
 
     labeled_prices = []
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
-        if re.search(r'(?:جملة|جمله|اونلاين|online)', line, re.IGNORECASE):
+        # تخطي الأسطر التي تحتوي على جملة فقط (بدون اسم محدد) – ستحذف لاحقاً
+        if re.search(r'(?:جملة|جمله)', line, re.IGNORECASE) and not re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             new_lines.append(line)
             continue
 
@@ -217,11 +218,18 @@ def build_text(original_text, source_id, msg_date, current_num):
         if match:
             label_part = match.group(1)
             price = int(match.group(2))
-            retail_price = RETAIL_MAPPING.get(price, price)
-            arabic_price = convert_to_arabic_numbers(retail_price)
-            formatted = f"{label_part}: 💰 {arabic_price} ج 🔥"
-            labeled_prices.append(formatted)
-            continue
+            # إذا كان الاسم يحتوي على "جملة" أو "جمله"، نستمر (لأنها ستحذف لاحقاً)
+            if re.search(r'(?:جملة|جمله)', label_part, re.IGNORECASE):
+                new_lines.append(line)  # نتركها لتحذف في مرحلة التنظيف
+                continue
+            else:
+                # إزالة كلمة "اونلاين" أو "online" من الاسم
+                clean_label = re.sub(r'\s*(?:اونلاين|online)\s*', '', label_part, flags=re.IGNORECASE).strip()
+                retail_price = RETAIL_MAPPING.get(price, price)
+                arabic_price = convert_to_arabic_numbers(retail_price)
+                formatted = f"{clean_label}: 💰 {arabic_price} ج 🔥"
+                labeled_prices.append(formatted)
+                continue
         new_lines.append(line)
 
     norm_text = "\n".join(new_lines)
@@ -284,16 +292,14 @@ def build_text(original_text, source_id, msg_date, current_num):
     parts = [description]
     
     if labeled_prices:
-        # توجد أسعار مسماة: نضيف الكود والأسعار المسماة فقط
         parts.append(f"الكود : 🔖 {my_code}")
         parts.extend(labeled_prices)
     elif found_price_val is not None:
-        # لا توجد أسعار مسماة ولكن وجدنا سعراً عاماً
         final_price_val = RETAIL_MAPPING.get(found_price_val, "")
         price_str_ar = convert_to_arabic_numbers(final_price_val)
         parts.append(f"الكود : 🔖 {my_code}")
         parts.append(f"السعر : 💰 {price_str_ar} ج 🔥")
-    # إذا لم نجد أي سعر ولم توجد أسعار مسماة، نكتفي بالوصف فقط (لا كود ولا سعر)
+    # إذا لم نجد أي سعر ولم توجد أسعار مسماة، نكتفي بالوصف فقط
 
     return "\n".join(parts)
 
@@ -349,9 +355,6 @@ async def safe_send(client, messages, source_id):
 
         if retail_text != "":
             await client.send_message(RETAIL_CHANNEL, retail_text)
-            # لا نزيد العداد إلا إذا كان هناك نص فعلي يحوي كودًا (أي وجد سعر أو أسعار مسماة)
-            # ولكن لتبسيط الأمور، نزيد العداد دائمًا عند إرسال النص (حتى لو بدون كود)
-            # يمكنك تعديل هذه النقطة حسب الرغبة
             if raw_caption:
                 channel_counters[counter_key] = current_num
                 save_counter(counter_key, current_num)
@@ -427,12 +430,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.16 Ready!"
+    return "Retail Pro Bot v2.3.17 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.16 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.17 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
