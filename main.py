@@ -202,6 +202,9 @@ def build_text(original_text, source_id, msg_date, current_num):
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
 
+    # استخراج السعر العام مبكراً
+    found_price_val = extract_real_price(original_text)
+
     labeled_prices = []
     lines = norm_text.split('\n')
     new_lines = []
@@ -277,15 +280,20 @@ def build_text(original_text, source_id, msg_date, current_num):
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     my_code = f"{prefix}{current_num:02d}{today_str}"
 
-    parts = [description, "", f"الكود : 🔖 {my_code}"]
+    # بناء الأجزاء النهائية
+    parts = [description]
     
     if labeled_prices:
+        # توجد أسعار مسماة: نضيف الكود والأسعار المسماة فقط
+        parts.append(f"الكود : 🔖 {my_code}")
         parts.extend(labeled_prices)
-    else:
-        found_price_val = extract_real_price(original_text)
+    elif found_price_val is not None:
+        # لا توجد أسعار مسماة ولكن وجدنا سعراً عاماً
         final_price_val = RETAIL_MAPPING.get(found_price_val, "")
         price_str_ar = convert_to_arabic_numbers(final_price_val)
+        parts.append(f"الكود : 🔖 {my_code}")
         parts.append(f"السعر : 💰 {price_str_ar} ج 🔥")
+    # إذا لم نجد أي سعر ولم توجد أسعار مسماة، نكتفي بالوصف فقط (لا كود ولا سعر)
 
     return "\n".join(parts)
 
@@ -341,6 +349,9 @@ async def safe_send(client, messages, source_id):
 
         if retail_text != "":
             await client.send_message(RETAIL_CHANNEL, retail_text)
+            # لا نزيد العداد إلا إذا كان هناك نص فعلي يحوي كودًا (أي وجد سعر أو أسعار مسماة)
+            # ولكن لتبسيط الأمور، نزيد العداد دائمًا عند إرسال النص (حتى لو بدون كود)
+            # يمكنك تعديل هذه النقطة حسب الرغبة
             if raw_caption:
                 channel_counters[counter_key] = current_num
                 save_counter(counter_key, current_num)
@@ -416,12 +427,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.15 Ready!"
+    return "Retail Pro Bot v2.3.16 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.15 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.16 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
