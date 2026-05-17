@@ -106,7 +106,7 @@ channel_counters = load_counters()
 SUPPLIER_PREFIX_MAP = {
     "aymanelawamy123": "A", "sasaaccessories": "S", "ayselstore55": "AS",
     "miyokowatches22": "M", -1001132261086: "P", -1001448553593: "I",
-    -1001682055192: "H", -1001443297771: "P"  # ← تمت إضافة المعرف الجديد
+    -1001682055192: "H", -1001443297771: "P"
 }
 
 def is_screenshot(photo):
@@ -140,7 +140,6 @@ def extract_real_price(text):
     if cart_match:
         return int(cart_match.group(1))
 
-    # تم توسيع النمط ليشمل "price" بدون نقطتين
     price_match = re.search(r'(?:الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match:
         return int(price_match.group(1))
@@ -213,12 +212,10 @@ def build_text(original_text, source_id, msg_date, current_num):
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
-        # تخطي الجملة فقط
         if re.search(r'(?:جملة|جمله)', line, re.IGNORECASE) and not re.search(r'(?:اونلاين|online|price)', line, re.IGNORECASE):
             new_lines.append(line)
             continue
 
-        # البحث عن أسعار مسماة (عربي فقط)
         match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]\s*(\d+)', line, re.IGNORECASE)
         if match:
             label_part = match.group(1)
@@ -242,17 +239,12 @@ def build_text(original_text, source_id, msg_date, current_num):
         line = line.strip()
         if not line: continue
 
-        # قبل تخطي السطر الذي يبدأ بـ N2516 مثلاً، نفحص إن كان يحوي سعراً
         if re.match(r'^[A-Z]+\d+.*$', line, re.IGNORECASE):
-            # نبحث عن سعر داخل السطر نفسه (مثل price 130)
             p = extract_real_price(line)
             if p is None:
-                continue  # لا يوجد سعر، نتخطى السطر فعلاً
-            # إذا وجدنا سعراً، نضيفه إلى found_price_val إذا لم يكن موجوداً مسبقاً
+                continue
             if found_price_val is None:
                 found_price_val = p
-            # ثم نزيل الجزء "N2516 price 130" ونبقي فقط النص المتبقي (إن وجد)
-            # لكن في هذه الحالة، السطر كله هو "N2516 price 130" بدون وصف، لذا نتابع
             continue
 
         if re.search(r'(?:الكارت|كارت).*ب\s*\d+\s*ج', line, re.IGNORECASE): continue
@@ -281,8 +273,12 @@ def build_text(original_text, source_id, msg_date, current_num):
         if is_number_emoji_line(line):
             continue
 
-        if line and len(line.split()) == 1 and not any(c.isascii() and c.isalpha() for c in line):
-            continue
+        if line and len(line.split()) == 1:
+            if re.match(r'^[\u0600-\u06FF]+$', line):
+                pass
+            elif not any(c.isascii() and c.isalpha() for c in line):
+                continue
+
         if len(line) <= 3 and not any(c.isascii() and c.isalpha() for c in line):
             continue
 
@@ -447,12 +443,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.19 Ready!"
+    return "Retail Pro Bot v2.3.20 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.19 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.20 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
