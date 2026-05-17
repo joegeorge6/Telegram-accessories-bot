@@ -202,14 +202,12 @@ def build_text(original_text, source_id, msg_date, current_num):
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
 
-    # استخراج السعر العام مبكراً (قد لا يُستخدم إذا وُجدت أسعار مسماة)
     found_price_val = extract_real_price(original_text)
 
     labeled_prices = []
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
-        # تخطي الأسطر التي تحتوي على جملة فقط (بدون اسم محدد) – ستحذف لاحقاً
         if re.search(r'(?:جملة|جمله)', line, re.IGNORECASE) and not re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             new_lines.append(line)
             continue
@@ -218,12 +216,10 @@ def build_text(original_text, source_id, msg_date, current_num):
         if match:
             label_part = match.group(1)
             price = int(match.group(2))
-            # إذا كان الاسم يحتوي على "جملة" أو "جمله"، نستمر (لأنها ستحذف لاحقاً)
             if re.search(r'(?:جملة|جمله)', label_part, re.IGNORECASE):
-                new_lines.append(line)  # نتركها لتحذف في مرحلة التنظيف
+                new_lines.append(line)
                 continue
             else:
-                # إزالة كلمة "اونلاين" أو "online" من الاسم
                 clean_label = re.sub(r'\s*(?:اونلاين|online)\s*', '', label_part, flags=re.IGNORECASE).strip()
                 retail_price = RETAIL_MAPPING.get(price, price)
                 arabic_price = convert_to_arabic_numbers(retail_price)
@@ -288,7 +284,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     my_code = f"{prefix}{current_num:02d}{today_str}"
 
-    # بناء الأجزاء النهائية
     parts = [description]
     
     if labeled_prices:
@@ -299,7 +294,6 @@ def build_text(original_text, source_id, msg_date, current_num):
         price_str_ar = convert_to_arabic_numbers(final_price_val)
         parts.append(f"الكود : 🔖 {my_code}")
         parts.append(f"السعر : 💰 {price_str_ar} ج 🔥")
-    # إذا لم نجد أي سعر ولم توجد أسعار مسماة، نكتفي بالوصف فقط
 
     return "\n".join(parts)
 
@@ -411,6 +405,10 @@ async def main_handler(client, message):
     m_date = message.date.replace(tzinfo=timezone.utc)
     if m_date < START_DATE or (END_DATE_LIMIT and m_date > END_DATE_LIMIT):
         return
+
+    # ✅ استخدام اسم المستخدم إذا وُجد، وإلا المعرف الرقمي
+    source = message.chat.username or message.chat.id
+
     if message.media_group_id:
         if hasattr(client, '_recent_groups') and message.media_group_id in client._recent_groups:
             return
@@ -419,23 +417,23 @@ async def main_handler(client, message):
         client._recent_groups.add(message.media_group_id)
         try:
             msgs = await client.get_media_group(message.chat.id, message.id)
-            await safe_send(client, msgs, message.chat.id)
+            await safe_send(client, msgs, source)
         except:
             pass
         finally:
             client._recent_groups.discard(message.media_group_id)
     else:
-        await safe_send(client, [message], message.chat.id)
+        await safe_send(client, [message], source)
 
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.17 Ready!"
+    return "Retail Pro Bot v2.3.18 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.17 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.18 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
