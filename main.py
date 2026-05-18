@@ -212,7 +212,8 @@ def build_text(original_text, source_id, msg_date, current_num):
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
-        if re.search(r'(?:جملة|جمله)', line, re.IGNORECASE) and not re.search(r'(?:اونلاين|online|price)', line, re.IGNORECASE):
+        # تخطي الجملة والدستة (لا نحولها إلى أسعار مسماة)
+        if re.search(r'(?:جملة|جمله|دسته|دستة)', line, re.IGNORECASE) and not re.search(r'(?:اونلاين|online|price)', line, re.IGNORECASE):
             new_lines.append(line)
             continue
 
@@ -220,8 +221,8 @@ def build_text(original_text, source_id, msg_date, current_num):
         if match:
             label_part = match.group(1)
             price = int(match.group(2))
-            if re.search(r'(?:جملة|جمله)', label_part, re.IGNORECASE):
-                new_lines.append(line)
+            if re.search(r'(?:جملة|جمله|دسته|دستة)', label_part, re.IGNORECASE):
+                new_lines.append(line)  # نمرر السطر ليتم حذفه في التنظيف
                 continue
             else:
                 clean_label = re.sub(r'\s*(?:اونلاين|online)\s*', '', label_part, flags=re.IGNORECASE).strip()
@@ -248,6 +249,7 @@ def build_text(original_text, source_id, msg_date, current_num):
             continue
 
         if re.search(r'(?:الكارت|كارت).*ب\s*\d+\s*ج', line, re.IGNORECASE): continue
+        # سطور الجملة والدستة تحذف هنا
         if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار).*']): continue
         if re.search(r'(?:أونلاين|اونلاين|online|price)', line, re.IGNORECASE): continue
         if re.search(r'بكام', line, re.IGNORECASE): continue
@@ -289,7 +291,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     code_match = re.search(r'([A-Z]+)\d+', normalize_numbers(original_text), re.IGNORECASE)
     original_code_prefix = code_match.group(1).upper() if code_match else ""
 
-    # ✅ تصحيح شرط الوصف الافتراضي
     if not description.strip() and original_code_prefix in P_CODE_TRANSLATION:
         item_name = P_CODE_TRANSLATION[original_code_prefix]
         description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
@@ -444,12 +445,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.21 Ready!"
+    return "Retail Pro Bot v2.3.23 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.21 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.23 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
