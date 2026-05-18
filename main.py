@@ -222,7 +222,7 @@ def build_text(original_text, source_id, msg_date, current_num):
             label_part = match.group(1)
             price = int(match.group(2))
             if re.search(r'(?:جملة|جمله|دسته|دستة)', label_part, re.IGNORECASE):
-                new_lines.append(line)  # نمرر السطر ليتم حذفه في التنظيف
+                new_lines.append(line)
                 continue
             else:
                 clean_label = re.sub(r'\s*(?:اونلاين|online)\s*', '', label_part, flags=re.IGNORECASE).strip()
@@ -236,9 +236,26 @@ def build_text(original_text, source_id, msg_date, current_num):
     norm_text = "\n".join(new_lines)
 
     cleaned_lines = []
+    size_mode = False
     for line in norm_text.split('\n'):
         line = line.strip()
         if not line: continue
+
+        # ✅ حذف الأكواد التي على شكل N-011, B-018, E-001
+        if re.match(r'^[A-Z]+-\d+$', line):
+            continue
+
+        if size_mode:
+            if re.match(r'^\d+\s*$', line) or re.match(r'^\d+\s*[^a-zA-Z\u0600-\u06FF]+$', line):
+                cleaned_lines.append(line)
+                continue
+            else:
+                size_mode = False
+
+        if re.search(r'مقاس', line, re.IGNORECASE):
+            size_mode = True
+            cleaned_lines.append(line)
+            continue
 
         if re.match(r'^[A-Z]+\d+.*$', line, re.IGNORECASE):
             p = extract_real_price(line)
@@ -249,7 +266,6 @@ def build_text(original_text, source_id, msg_date, current_num):
             continue
 
         if re.search(r'(?:الكارت|كارت).*ب\s*\d+\s*ج', line, re.IGNORECASE): continue
-        # سطور الجملة والدستة تحذف هنا
         if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار).*']): continue
         if re.search(r'(?:أونلاين|اونلاين|online|price)', line, re.IGNORECASE): continue
         if re.search(r'بكام', line, re.IGNORECASE): continue
@@ -445,12 +461,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.23 Ready!"
+    return "Retail Pro Bot v2.3.25 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.23 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.25 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
