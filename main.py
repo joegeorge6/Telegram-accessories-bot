@@ -289,7 +289,8 @@ def build_text(original_text, source_id, msg_date, current_num):
     code_match = re.search(r'([A-Z]+)\d+', normalize_numbers(original_text), re.IGNORECASE)
     original_code_prefix = code_match.group(1).upper() if code_match else ""
 
-    if not any(c.isalpha() or '\u0600' <= c <= '\u06FF' for c in original_text) and original_code_prefix in P_CODE_TRANSLATION:
+    # ✅ تصحيح شرط الوصف الافتراضي
+    if not description.strip() and original_code_prefix in P_CODE_TRANSLATION:
         item_name = P_CODE_TRANSLATION[original_code_prefix]
         description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
 
@@ -314,7 +315,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     return "\n".join(parts)
 
 # ==========================================
-# 3. نظام النشر
+# 3. نظام النشر (بدون تغيير)
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -443,12 +444,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.20 Ready!"
+    return "Retail Pro Bot v2.3.21 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.20 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.21 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
