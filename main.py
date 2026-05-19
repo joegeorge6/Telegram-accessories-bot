@@ -74,21 +74,29 @@ def normalize_numbers(text):
     return text.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
 
 def parse_date(date_str, default_date, is_end=False):
+    """تحليل التاريخ والوقت الاختياري (HH:MM) بتوقيت القاهرة وتحويله إلى UTC"""
     if not date_str or date_str.strip() == "":
         return default_date
+    date_str = date_str.strip()
     if len(date_str.split('-')) == 2:
         date_str += f"-{datetime.now().year}"
     
     cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
-    for fmt in ("%d-%m-%Y", "%Y-%m-%d", "%m-%d-%Y"):
+    # محاولة قراءة صيغ التاريخ مع الوقت أو بدونه
+    for fmt in ("%d-%m-%Y %H:%M", "%Y-%m-%d %H:%M", "%m-%d-%Y %H:%M",
+                "%d-%m-%Y", "%Y-%m-%d", "%m-%d-%Y"):
         try:
-            dt_naive = datetime.strptime(date_str.strip(), fmt)
-            if is_end:
-                dt_cairo = dt_naive.replace(hour=23, minute=59, second=59, tzinfo=cairo_tz)
+            dt_naive = datetime.strptime(date_str, fmt)
+            # إذا كانت الصيغة بدون وقت، نضبط الوقت حسب is_end
+            if "%H" not in fmt:
+                if is_end:
+                    dt_cairo = dt_naive.replace(hour=23, minute=59, second=59, tzinfo=cairo_tz)
+                else:
+                    dt_cairo = dt_naive.replace(hour=0, minute=0, second=0, tzinfo=cairo_tz)
             else:
-                dt_cairo = dt_naive.replace(hour=0, minute=0, second=0, tzinfo=cairo_tz)
+                dt_cairo = dt_naive.replace(tzinfo=cairo_tz)
             return dt_cairo.astimezone(timezone.utc)
-        except:
+        except ValueError:
             continue
     return default_date
 
@@ -460,12 +468,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.28 Ready!"
+    return "Retail Pro Bot v2.3.29 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.28 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.29 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
