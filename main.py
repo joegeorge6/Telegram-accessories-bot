@@ -40,7 +40,8 @@ BLOCK_KEYWORDS = [
     "تعالو تيك توك هوريكو شغل دهب اللهم بارك ♥️",
     "جارى التصوير والتسعير 💥💥💥💥",
     "مطلوب شباب للعمل بشرط التفرغ \nويكون قريب من النزهه الجديده \nمواعيد العمل من 12 ل 11 \nيوم الاحد اجازه اسبوعيه \nللاستفسارات 01091714149",
-    "شحن", "الشحن", "للشحن"
+    "شحن", "الشحن", "للشحن",
+    "تم غلق الحجز والمحل اليوم وغداً  👈👈الاحد 👉👉الاجازه الاسبوعيه اترك رسالتك بالحجز وسوف نقوم بالرد عليك يوم الاثنين ان شاء الله \nبرجاء عدم الازعاج لا يتم الرد على اى استفسارات او حجوزات او مكالمات خلال الاجازه وشكرا"
 ]
 
 P_CODE_TRANSLATION = {
@@ -74,7 +75,6 @@ def normalize_numbers(text):
     return text.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
 
 def parse_date(date_str, default_date, is_end=False):
-    """تحليل التاريخ والوقت الاختياري (HH:MM) بتوقيت القاهرة وتحويله إلى UTC"""
     if not date_str or date_str.strip() == "":
         return default_date
     date_str = date_str.strip()
@@ -82,12 +82,10 @@ def parse_date(date_str, default_date, is_end=False):
         date_str += f"-{datetime.now().year}"
     
     cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
-    # محاولة قراءة صيغ التاريخ مع الوقت أو بدونه
     for fmt in ("%d-%m-%Y %H:%M", "%Y-%m-%d %H:%M", "%m-%d-%Y %H:%M",
                 "%d-%m-%Y", "%Y-%m-%d", "%m-%d-%Y"):
         try:
             dt_naive = datetime.strptime(date_str, fmt)
-            # إذا كانت الصيغة بدون وقت، نضبط الوقت حسب is_end
             if "%H" not in fmt:
                 if is_end:
                     dt_cairo = dt_naive.replace(hour=23, minute=59, second=59, tzinfo=cairo_tz)
@@ -468,12 +466,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.29 Ready!"
+    return "Retail Pro Bot v2.3.30 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.29 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.30 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
