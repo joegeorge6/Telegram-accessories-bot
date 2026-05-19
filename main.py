@@ -275,8 +275,11 @@ def build_text(original_text, source_id, msg_date, current_num):
         if re.search(r'(?:أونلاين|اونلاين|online|price)', line, re.IGNORECASE): continue
         if re.search(r'بكام', line, re.IGNORECASE): continue
 
+        # ====== التعديل الجديد للتعامل مع العروض ======
         if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
-            continue
+            line = re.sub(r'^.*?عرض\s*\S*\s*', '', line, flags=re.IGNORECASE).strip()
+            if not line:
+                continue
 
         if re.search(r'(?:للحجز|طلب الاوردر|للطلب)', line, re.IGNORECASE):
             continue
@@ -466,12 +469,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.30 Ready!"
+    return "Retail Pro Bot v2.3.31 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.30 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.31 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
