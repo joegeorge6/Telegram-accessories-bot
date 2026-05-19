@@ -24,7 +24,6 @@ CAIRO_OFFSET = int(os.environ.get("TIMEZONE_OFFSET", "3"))
 
 SCREENSHOT_RATIO = 1.8
 
-# ✅ تمت إضافة "ختم AS" و "ختمAS"
 WORDS_TO_REMOVE = ["SASA", "sasa", "PRIBORE", "Women Accessories", "ختم AS", "ختمAS"]
 BLOCK_KEYWORDS = [
     "الرسالة المثبته", "نظام التعامل", "بتجمع / ي اوردورك", "قفل فاتورة",
@@ -40,7 +39,8 @@ BLOCK_KEYWORDS = [
     "حجز الخواتم ب اسكرين من الفيديو علشان هيبان فيه الشروط",
     "تعالو تيك توك هوريكو شغل دهب اللهم بارك ♥️",
     "جارى التصوير والتسعير 💥💥💥💥",
-    "مطلوب شباب للعمل بشرط التفرغ \nويكون قريب من النزهه الجديده \nمواعيد العمل من 12 ل 11 \nيوم الاحد اجازه اسبوعيه \nللاستفسارات 01091714149"
+    "مطلوب شباب للعمل بشرط التفرغ \nويكون قريب من النزهه الجديده \nمواعيد العمل من 12 ل 11 \nيوم الاحد اجازه اسبوعيه \nللاستفسارات 01091714149",
+    "شحن", "الشحن", "للشحن"
 ]
 
 P_CODE_TRANSLATION = {
@@ -460,12 +460,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.26 Ready!"
+    return "Retail Pro Bot v2.3.27 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.26 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.27 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
