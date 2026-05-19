@@ -256,7 +256,7 @@ def build_text(original_text, source_id, msg_date, current_num):
             cleaned_lines.append(line)
             continue
 
-        if re.match(r'^[A-Z]+\d+.*$', line, re.IGNORECASE):
+        if re.match(r'^[A-Z]+\s*\d+', line, re.IGNORECASE):
             p = extract_real_price(line)
             if p is None:
                 continue
@@ -303,7 +303,7 @@ def build_text(original_text, source_id, msg_date, current_num):
 
     description = "\n".join(cleaned_lines)
     
-    code_match = re.search(r'([A-Z]+)\d+', normalize_numbers(original_text), re.IGNORECASE)
+    code_match = re.search(r'([A-Z]+)\s*\d+', normalize_numbers(original_text), re.IGNORECASE)
     original_code_prefix = code_match.group(1).upper() if code_match else ""
 
     if not description.strip() and original_code_prefix in P_CODE_TRANSLATION:
@@ -460,12 +460,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.27 Ready!"
+    return "Retail Pro Bot v2.3.28 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.27 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.28 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
