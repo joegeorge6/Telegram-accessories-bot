@@ -216,19 +216,43 @@ def build_text(original_text, source_id, msg_date, current_num):
     found_price_val = extract_real_price(original_text)
 
     labeled_prices = []
+    # لتتبع آخر اسم منتج رأيناه
+    last_product_name = None
+    # لتخزين أسعار الجملة والأونلاين مؤقتًا لكل منتج
+    product_prices = {}  # {name: {"jomla": price, "online": price}}
+
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
-        if re.search(r'(?:جملة|جمله|دسته|دستة)', line, re.IGNORECASE) and not re.search(r'(?:اونلاين|online|price)', line, re.IGNORECASE):
-            new_lines.append(line)
-            continue
+        # تجاهل أسعار الجملة والدستة بدون "اونلاين"
+        if re.search(r'(?:جمله|دسته|دستة)', line, re.IGNORECASE) and not re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
+            # إذا كان هناك اسم منتج سابق، نربطه
+            if last_product_name:
+                match = re.search(r'(?:جمله|دسته|دستة)\s*(\d+)', line, re.IGNORECASE)
+                if match:
+                    price = int(match.group(1))
+                    if last_product_name not in product_prices:
+                        product_prices[last_product_name] = {}
+                    product_prices[last_product_name]["jomla"] = price
+            continue  # لا نضيف السطر إلى الوصف
 
+        # سطر أونلاين
+        if re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
+            match = re.search(r'(?:اونلاين|online)\s*(\d+)', line, re.IGNORECASE)
+            if match:
+                price = int(match.group(1))
+                if last_product_name:
+                    if last_product_name not in product_prices:
+                        product_prices[last_product_name] = {}
+                    product_prices[last_product_name]["online"] = price
+            continue  # لا نضيف السطر
+
+        # البحث عن أسعار مسماة بالطريقة القديمة (سعر الكوليه: 110)
         match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]\s*(\d+)', line, re.IGNORECASE)
         if match:
             label_part = match.group(1)
             price = int(match.group(2))
             if re.search(r'(?:جملة|جمله|دسته|دستة)', label_part, re.IGNORECASE):
-                new_lines.append(line)
                 continue
             else:
                 clean_label = re.sub(r'\s*(?:اونلاين|online)\s*', '', label_part, flags=re.IGNORECASE).strip()
@@ -237,10 +261,33 @@ def build_text(original_text, source_id, msg_date, current_num):
                 formatted = f"{clean_label}: 💰 {arabic_price} ج 🔥"
                 labeled_prices.append(formatted)
                 continue
+
+        # إذا لم يكن السطر سعرًا، فقد يكون اسم منتج أو وصف
+        # نتحقق إذا كان يبدو كاسم منتج (بدون أرقام، ليس طويلاً جدًا، ليس إيموجي فقط)
+        if not re.search(r'\d', line) and line.strip():
+            # نعتبره اسم منتج جديد
+            last_product_name = line.strip()
+            # قد نضيفه إلى الوصف إذا لم يكن ضمن الأسعار (سنضيفه لاحقًا بعد التنظيف)
         new_lines.append(line)
 
+    # بناء النص بعد إزالة أسطر الأسعار
     norm_text = "\n".join(new_lines)
 
+    # تحويل الأسعار المجمعة إلى أسعار مسماة
+    for name, prices in product_prices.items():
+        # نفضل الأونلاين إذا وجد، ثم الجملة
+        if "online" in prices:
+            final_price = prices["online"]
+        elif "jomla" in prices:
+            final_price = prices["jomla"]
+        else:
+            continue
+        retail_price = RETAIL_MAPPING.get(final_price, final_price)
+        arabic_price = convert_to_arabic_numbers(retail_price)
+        formatted = f"{name} بسعر : 💰 {arabic_price} ج 🔥"
+        labeled_prices.append(formatted)
+
+    # الآن تنظيف النص من أي بقايا أسعار أو كلمات غير مرغوبة
     cleaned_lines = []
     size_mode = False
     for line in norm_text.split('\n'):
@@ -275,7 +322,6 @@ def build_text(original_text, source_id, msg_date, current_num):
         if re.search(r'(?:أونلاين|اونلاين|online|price)', line, re.IGNORECASE): continue
         if re.search(r'بكام', line, re.IGNORECASE): continue
 
-        # ====== التعديل الجديد للتعامل مع العروض ======
         if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
             line = re.sub(r'^.*?عرض\s*\S*\s*', '', line, flags=re.IGNORECASE).strip()
             if not line:
@@ -469,12 +515,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.31 Ready!"
+    return "Retail Pro Bot v2.3.32 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.31 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.32 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
