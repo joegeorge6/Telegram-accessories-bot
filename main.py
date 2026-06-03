@@ -24,7 +24,7 @@ CAIRO_OFFSET = int(os.environ.get("TIMEZONE_OFFSET", "3"))
 
 SCREENSHOT_RATIO = 1.8
 
-WORDS_TO_REMOVE = ["SASA", "sasa", "PRIBORE", "Women Accessories", "ختم AS", "ختمAS"]
+WORDS_TO_REMOVE = ["SASA", "sasa", "PRIBORE", "Women Accessories"]
 BLOCK_KEYWORDS = [
     "الرسالة المثبته", "نظام التعامل", "بتجمع / ي اوردورك", "قفل فاتورة",
     "مواعيد العمل يوميا", "الاحد اجازة", "فوادفون كاش", "انستا باي",
@@ -209,6 +209,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     norm_text = re.sub(r'(?:استالس|ستالس|استانليس)', 'استانلس', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\bبلاتيد\b', 'بليتد', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\bزركون\b', 'زيركون', norm_text, flags=re.IGNORECASE)
+    norm_text = re.sub(r'ختم\s*AS', '', norm_text, flags=re.IGNORECASE)  # ✅ يغطي ختمAS، ختم AS، ختم  AS
 
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
@@ -525,12 +526,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.38 Ready!"
+    return "Retail Pro Bot v2.3.40 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.38 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.40 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
