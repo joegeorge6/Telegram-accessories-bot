@@ -213,7 +213,8 @@ def build_text(original_text, source_id, msg_date, current_num):
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
 
-    found_price_val = None  # سنؤجل الحساب
+    found_price_val = extract_real_price(original_text)
+    fallback_prices = []
 
     labeled_prices = []
     last_product_name = None
@@ -222,7 +223,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
-        # حذف أي سطر جملة/دسته بدون أونلاين من النص تماماً
         if re.search(r'(?:جمله|دسته|دستة|باكت)', line, re.IGNORECASE) and not re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             if last_product_name:
                 match = re.search(r'(?:جمله|دسته|دستة)\s*(\d+)', line, re.IGNORECASE)
@@ -231,7 +231,7 @@ def build_text(original_text, source_id, msg_date, current_num):
                     if last_product_name not in product_prices:
                         product_prices[last_product_name] = {}
                     product_prices[last_product_name]["jomla"] = price
-            continue  # لا نضيف السطر إلى new_lines
+            continue
 
         if re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             match = re.search(r'(?:اونلاين|online)\s*(\d+)', line, re.IGNORECASE)
@@ -263,8 +263,7 @@ def build_text(original_text, source_id, msg_date, current_num):
 
     norm_text = "\n".join(new_lines)
 
-    # إعادة حساب السعر العام من النص بعد إزالة سطور الجملة والدسته
-    found_price_val = extract_real_price(norm_text)
+    found_price_val = extract_real_price(norm_text) or found_price_val
 
     new_labeled = []
     for name, prices in product_prices.items():
@@ -336,6 +335,11 @@ def build_text(original_text, source_id, msg_date, current_num):
         if re.search(r'\b01\d{9}\b', line):
             continue
 
+        if not found_price_val:
+            fallback_match = re.search(r'\bب\s*(\d+)\s*(?:ج|جنيه)', line)
+            if fallback_match:
+                fallback_prices.append(int(fallback_match.group(1)))
+
         if re.match(r'^(\d{2,4})\s+', line):
             num = int(re.match(r'^(\d{2,4})', line).group(1))
             if 15 <= num <= 2000:
@@ -358,6 +362,9 @@ def build_text(original_text, source_id, msg_date, current_num):
             continue
 
         if line: cleaned_lines.append(line)
+
+    if found_price_val is None and fallback_prices:
+        found_price_val = fallback_prices[-1]
 
     description = "\n".join(cleaned_lines)
     
@@ -389,7 +396,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     return "\n".join(parts)
 
 # ==========================================
-# 3. نظام النشر (بدون تغيير)
+# 3. نظام النشر
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -518,12 +525,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.37 Ready!"
+    return "Retail Pro Bot v2.3.38 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.37 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.38 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
