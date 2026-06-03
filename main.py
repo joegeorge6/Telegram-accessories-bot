@@ -139,24 +139,39 @@ def extract_real_price(text):
     norm_text = normalize_numbers(text)
     clean_for_search = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر|شكل|لون|ق)', '', norm_text, flags=re.IGNORECASE)
 
-    special_offer = re.search(r'عرض\s+خاص\s*(\d+)', clean_for_search, re.IGNORECASE)
+    # 1. عرض خاص (يدعم تكرار الألف)
+    special_offer = re.search(r'عرض\s+خا+ص\s*(\d+)', clean_for_search, re.IGNORECASE)
     if special_offer:
         return int(special_offer.group(1))
 
+    # 2. الكارت
     cart_match = re.search(r'(?:الكارت كله|الكارت)\s*ب\s*(\d+)', clean_for_search, re.IGNORECASE)
     if cart_match:
         return int(cart_match.group(1))
 
+    # 3. نمط "السعر X بدل Y" نأخذ X (الأول)
+    price_badal_match = re.search(r'السعر\s*(\d+)\s*بدل\s*\d+', clean_for_search, re.IGNORECASE)
+    if price_badal_match:
+        return int(price_badal_match.group(1))
+
+    # 4. أسعار محددة (اونلاين، قطعة، الخ)
     price_match = re.search(r'(?:الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match:
         return int(price_match.group(1))
 
+    # 5. الجملة
     wholesale_match = re.search(r'(?:الجمله|الجملة|جمله|جملة)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if wholesale_match:
         return int(wholesale_match.group(1))
 
+    # 6. آخر رقم متاح
     nums = [int(n) for n in re.findall(r'(\d+)', clean_for_search) if 15 <= int(n) <= 2000]
-    return nums[-1] if nums else None
+    if nums:
+        # إذا وجد نمط "بدل" نأخذ الرقم الأول (الأصغر)
+        if 'بدل' in clean_for_search:
+            return nums[0]
+        return nums[-1]
+    return None
 
 def is_emoji_only(text):
     if not text or not text.strip():
@@ -209,12 +224,12 @@ def build_text(original_text, source_id, msg_date, current_num):
     norm_text = re.sub(r'(?:استالس|ستالس|استانليس)', 'استانلس', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\bبلاتيد\b', 'بليتد', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\bزركون\b', 'زيركون', norm_text, flags=re.IGNORECASE)
-    norm_text = re.sub(r'ختم\s*AS', '', norm_text, flags=re.IGNORECASE)  # ✅ يغطي ختمAS، ختم AS، ختم  AS
+    norm_text = re.sub(r'ختم\s*AS', '', norm_text, flags=re.IGNORECASE)
 
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
 
-    found_price_val = extract_real_price(original_text)
+    found_price_val = extract_real_price(norm_text)
     fallback_prices = []
 
     labeled_prices = []
@@ -324,6 +339,9 @@ def build_text(original_text, source_id, msg_date, current_num):
         if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار|باكت).*']): continue
         if re.search(r'(?:أونلاين|اونلاين|online|price)', line, re.IGNORECASE): continue
         if re.search(r'بكام', line, re.IGNORECASE): continue
+
+        if re.search(r'\bL\s*\.?\s*E\b', line, re.IGNORECASE) or re.search(r'\bLe\b', line):
+            continue
 
         if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
             line = re.sub(r'^.*?عرض\s*\S*\s*', '', line, flags=re.IGNORECASE).strip()
@@ -526,12 +544,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.40 Ready!"
+    return "Retail Pro Bot v2.3.44 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.40 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.44 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
