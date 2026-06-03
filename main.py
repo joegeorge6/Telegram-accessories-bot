@@ -213,7 +213,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
 
-    found_price_val = extract_real_price(original_text)
+    found_price_val = None  # سنؤجل الحساب
 
     labeled_prices = []
     last_product_name = None
@@ -222,7 +222,8 @@ def build_text(original_text, source_id, msg_date, current_num):
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
-        if re.search(r'(?:جمله|دسته|دستة)', line, re.IGNORECASE) and not re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
+        # حذف أي سطر جملة/دسته بدون أونلاين من النص تماماً
+        if re.search(r'(?:جمله|دسته|دستة|باكت)', line, re.IGNORECASE) and not re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             if last_product_name:
                 match = re.search(r'(?:جمله|دسته|دستة)\s*(\d+)', line, re.IGNORECASE)
                 if match:
@@ -230,7 +231,7 @@ def build_text(original_text, source_id, msg_date, current_num):
                     if last_product_name not in product_prices:
                         product_prices[last_product_name] = {}
                     product_prices[last_product_name]["jomla"] = price
-            continue
+            continue  # لا نضيف السطر إلى new_lines
 
         if re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             match = re.search(r'(?:اونلاين|online)\s*(\d+)', line, re.IGNORECASE)
@@ -242,7 +243,7 @@ def build_text(original_text, source_id, msg_date, current_num):
                     product_prices[last_product_name]["online"] = price
             continue
 
-        match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]\s*(\d+)', line, re.IGNORECASE)
+        match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
         if match:
             label_part = match.group(1)
             price = int(match.group(2))
@@ -261,6 +262,9 @@ def build_text(original_text, source_id, msg_date, current_num):
         new_lines.append(line)
 
     norm_text = "\n".join(new_lines)
+
+    # إعادة حساب السعر العام من النص بعد إزالة سطور الجملة والدسته
+    found_price_val = extract_real_price(norm_text)
 
     new_labeled = []
     for name, prices in product_prices.items():
@@ -317,7 +321,6 @@ def build_text(original_text, source_id, msg_date, current_num):
             continue
 
         if re.search(r'(?:الكارت|كارت).*ب\s*\d+\s*ج', line, re.IGNORECASE): continue
-        # ✅ تم إضافة "باكت" إلى أنماط الحذف
         if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار|باكت).*']): continue
         if re.search(r'(?:أونلاين|اونلاين|online|price)', line, re.IGNORECASE): continue
         if re.search(r'بكام', line, re.IGNORECASE): continue
@@ -515,12 +518,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.36 Ready!"
+    return "Retail Pro Bot v2.3.37 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.36 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.37 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
