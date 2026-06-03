@@ -206,7 +206,7 @@ def build_text(original_text, source_id, msg_date, current_num):
         return ""
 
     norm_text = re.sub(r'\binfinity\b', 'فاشونيستا', norm_text, flags=re.IGNORECASE)
-    norm_text = re.sub(r'(?:استالس|ستالس|استانليس)', 'استانلس', norm_text, flags=re.IGNORECASE)  # ← أضفنا "استانليس"
+    norm_text = re.sub(r'(?:استالس|ستالس|استانليس)', 'استانلس', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\bبلاتيد\b', 'بليتد', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\bزركون\b', 'زيركون', norm_text, flags=re.IGNORECASE)
 
@@ -317,7 +317,8 @@ def build_text(original_text, source_id, msg_date, current_num):
             continue
 
         if re.search(r'(?:الكارت|كارت).*ب\s*\d+\s*ج', line, re.IGNORECASE): continue
-        if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار).*']): continue
+        # ✅ تم إضافة "باكت" إلى أنماط الحذف
+        if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار|باكت).*']): continue
         if re.search(r'(?:أونلاين|اونلاين|online|price)', line, re.IGNORECASE): continue
         if re.search(r'بكام', line, re.IGNORECASE): continue
 
@@ -385,7 +386,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     return "\n".join(parts)
 
 # ==========================================
-# 3. نظام النشر
+# 3. نظام النشر (بدون تغيير)
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -514,12 +515,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.35 Ready!"
+    return "Retail Pro Bot v2.3.36 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.35 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.36 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
