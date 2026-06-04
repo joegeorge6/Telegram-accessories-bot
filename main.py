@@ -148,12 +148,12 @@ def extract_real_price(text):
     if cart_match:
         return int(cart_match.group(1))
 
-    # ✅ نمط محسّن يدعم العربية: (?<!\w) و (?!\w) بدلاً من \b
-    price_match = re.search(r'(?<!\w)(?:الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)(?!\w)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
+    # ✅ النمط المحسن: (?<![\u0600-\u06FF]) بدلاً من \b للعربية
+    price_match = re.search(r'(?<![\u0600-\u06FF])(?:الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)(?![\u0600-\u06FF])\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match:
         return int(price_match.group(1))
 
-    wholesale_match = re.search(r'(?<!\w)(?:الجمله|الجملة|جمله|جملة)(?!\w)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
+    wholesale_match = re.search(r'(?<![\u0600-\u06FF])(?:الجمله|الجملة|جمله|جملة)(?![\u0600-\u06FF])\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if wholesale_match:
         return int(wholesale_match.group(1))
 
@@ -541,12 +541,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.50 Ready!"
+    return "Retail Pro Bot v2.3.51 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.50 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.51 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
