@@ -41,13 +41,16 @@ BLOCK_KEYWORDS = [
     "جارى التصوير والتسعير 💥💥💥💥",
     "مطلوب شباب للعمل بشرط التفرغ \nويكون قريب من النزهه الجديده \nمواعيد العمل من 12 ل 11 \nيوم الاحد اجازه اسبوعيه \nللاستفسارات 01091714149",
     "شحن", "الشحن", "للشحن",
-    "تم غلق الحجز والمحل اليوم وغداً  👈👈الاحد 👉👉الاجازه الاسبوعيه اترك رسالتك بالحجز وسوف نقوم بالرد عليك يوم الاثنين ان شاء الله \nبرجاء عدم الازعاج لا يتم الرد على اى استفسارات او حجوزات او مكالمات خلال الاجازه وشكرا"
+    "تم غلق الحجز والمحل اليوم وغداً  👈👈الاحد 👉👉الاجازه الاسبوعيه اترك رسالتك بالحجز وسوف نقوم بالرد عليك يوم الاثنين ان شاء الله \nبرجاء عدم الازعاج لا يتم الرد على اى استفسارات او حجوزات او مكالمات خلال الاجازه وشكرا",
+    "اى عميل استلم الاوردر بتاعه قبل العيد \nولسه مكتبش تم الاستلام \nيبعت حالا تم الاستلام \nلو استلمت ومكتبتش تم الاستلام مش هنفتح ليك حجز تانى"
 ]
 
 P_CODE_TRANSLATION = {
     "A": "انسيال", "K": "خلخال", "N": "سلسلة", "CP": "كوليه",
     "C": "كوليه", "E": "حلق", "R": "خاتم", "B": "اسورة"
 }
+
+# (باقي الدوال والمتغيرات كما هي في الإصدار السابق دون تغيير)
 
 def load_counters():
     if not os.path.exists(COUNTERS_FILE):
@@ -205,12 +208,11 @@ def build_text(original_text, source_id, msg_date, current_num):
     if is_emoji_only(norm_text):
         return ""
 
-    norm_text = re.sub(r'\binfinity\b', 'فاشونيستا', norm_text, flags=re.IGNORECASE)
+    norm_text = re.sub(r'(?<![a-zA-Z])infinity(?![a-zA-Z])', 'فاشونيستا', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'(?:استالس|ستالس|استانليس)', 'استانلس', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\bبلاتيد\b', 'بليتد', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\bزركون\b', 'زيركون', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'ختم\s*AS', '', norm_text, flags=re.IGNORECASE)
-    # ✅ تصحيح "الانسياب" و "انسياب" إلى "الانسيال"
     norm_text = re.sub(r'(?:الانسياب|انسياب)', 'الانسيال', norm_text, flags=re.IGNORECASE)
 
     for word in WORDS_TO_REMOVE:
@@ -226,7 +228,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
-        # --- التعامل مع جملة/دسته/باكت بدون اونلاين ---
         if re.search(r'(?:جمله|دسته|دستة|باكت)', line, re.IGNORECASE) and not re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             if last_product_name:
                 match = re.search(r'(?:جمله|دسته|دستة)\s*(\d+)', line, re.IGNORECASE)
@@ -235,7 +236,6 @@ def build_text(original_text, source_id, msg_date, current_num):
                     product_prices.setdefault(last_product_name, {})["jomla"] = price
             continue
 
-        # --- التعامل مع أونلاين ---
         if re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             match = re.search(r'(?:اونلاين|online)\s*(\d+)', line, re.IGNORECASE)
             if match:
@@ -244,7 +244,6 @@ def build_text(original_text, source_id, msg_date, current_num):
                     product_prices.setdefault(last_product_name, {})["online"] = price
             continue
 
-        # --- التعامل مع سعر مسمى (مثل "سعر السلسله: 110") ---
         match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
         if match:
             label_part = match.group(1)
@@ -258,7 +257,6 @@ def build_text(original_text, source_id, msg_date, current_num):
             else:
                 continue
 
-        # --- 🆕 التعامل مع نمط "المنتج ب سعر ج" (أساسي) ---
         direct_match = re.search(r'^(.+?)\s+ب\s+(\d+)\s*(?:ج|جنيه)', line, re.IGNORECASE)
         if direct_match and not re.search(r'(?:جملة|جمله|اونلاين|online|قطعه|قطعة|السعر|price|عرض)', line, re.IGNORECASE):
             product_name = direct_match.group(1).strip()
@@ -267,17 +265,14 @@ def build_text(original_text, source_id, msg_date, current_num):
             last_product_name = product_name
             continue
 
-        # --- تحديث اسم المنتج (أسطر بدون أرقام) ---
         if not re.search(r'\d', line) and line.strip():
             last_product_name = line.strip()
         new_lines.append(line)
 
     norm_text = "\n".join(new_lines)
 
-    # --- إعادة حساب السعر العام من النص المتبقي ---
     found_price_val = extract_real_price(norm_text) or found_price_val
 
-    # --- بناء الأسعار المسماة من المنتجات المخزنة ---
     new_labeled = []
     for name, prices in product_prices.items():
         final_price = None
@@ -292,7 +287,6 @@ def build_text(original_text, source_id, msg_date, current_num):
             arabic_price = convert_to_arabic_numbers(retail_price)
             new_labeled.append(f"{name} بسعر : 💰 {arabic_price} ج 🔥")
 
-    # --- إذا كان هناك عدة منتجات، نخفي أسماءها من الوصف ونضيف الأسعار المسماة ---
     if len(product_prices) > 1:
         for name in product_prices.keys():
             norm_text = re.sub(re.escape(name), '', norm_text)
@@ -307,7 +301,6 @@ def build_text(original_text, source_id, msg_date, current_num):
         elif "jomla" in only_product:
             found_price_val = only_product["jomla"]
 
-    # --- تنظيف النص النهائي ---
     cleaned_lines = []
     size_mode = False
     for line in norm_text.split('\n'):
@@ -417,7 +410,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     return "\n".join(parts)
 
 # ==========================================
-# 3. نظام النشر (بدون تغيير)
+# 3. نظام النشر
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -546,12 +539,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.45 Ready!"
+    return "Retail Pro Bot v2.3.47 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.45 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.47 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
