@@ -148,17 +148,11 @@ def extract_real_price(text):
     if cart_match:
         return int(cart_match.group(1))
 
-    # ✅ الأونلاين أول — سطر بسطر، بشرط مفيش "جملة" في نفس السطر
-    for line in clean_for_search.split('\n'):
-        if re.search(r'(?:اونلاين|الاونلاين|الأونلاين|أونلاين|online)', line, re.IGNORECASE):
-            if not re.search(r'(?:جمله|جملة)', line, re.IGNORECASE):
-                m = re.search(r'(?:اونلاين|الاونلاين|الأونلاين|أونلاين|online)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
-                if not m:
-                    m = re.search(r'(?:سعر\s+القطع[هة]|قطع[هة]|بسعر|السعر)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
-                if m:
-                    return int(m.group(1))
+    # هذه الأنماط أصبحت احتياطية لأن المنطق الرئيسي في build_text
+    price_match = re.search(r'(?<![\u0600-\u06FF])(?:الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)(?![\u0600-\u06FF])\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
+    if price_match:
+        return int(price_match.group(1))
 
-    # ✅ سعر الجملة فقط لو مفيش أونلاين
     wholesale_match = re.search(r'(?<![\u0600-\u06FF])(?:الجمله|الجملة|جمله|جملة)(?![\u0600-\u06FF])\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if wholesale_match:
         return int(wholesale_match.group(1))
@@ -223,7 +217,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
 
-    found_price_val = extract_real_price(norm_text)
+    found_price_val = None  # لن نستخرج من النص الكامل الآن
     fallback_prices = []
 
     labeled_prices = []
@@ -233,7 +227,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
-        # --- تجاهل أسطر الجملة/الدستة/الباكت بدون اونلاين (لن تظهر في الناتج) ---
+        # --- تجاهل أسطر الجملة/الدستة/الباكت بدون اونلاين ---
         if re.search(r'(?:جمله|دسته|دستة|باكت)', line, re.IGNORECASE) and not re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             if last_product_name:
                 match = re.search(r'(?:جمله|دسته|دستة)\s*(\d+)', line, re.IGNORECASE)
@@ -242,35 +236,27 @@ def build_text(original_text, source_id, msg_date, current_num):
                     product_prices.setdefault(last_product_name, {})["jomla"] = price
             continue
 
-        # --- أسطر الأونلاين: تحديث السعر العام مباشرة ---
+        # --- 🎯 سطر الأونلاين: استخراج مباشر لأول رقم واستخدامه كسعر عام ---
         if re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
-            match = re.search(r'(?:اونلاين|online)\s*(\d+)', line, re.IGNORECASE)
-            if not match:
-                match = re.search(r'(\d+)\s*(?:اونلاين|online)', line, re.IGNORECASE)
-            if match:
-                price = int(match.group(1))
-                found_price_val = price  # نعتمد سعر الأونلاين كسعر عام
+            match_online = re.search(r'(\d+)', line)
+            if match_online:
+                found_price_val = int(match_online.group(1))
             continue  # لا نضيف السطر إلى new_lines
 
-        # --- الأسعار المسماة (مثل "سعر السلسله: 110") ولكن بدون جملة أو أونلاين ---
+        # --- الأسعار المسماة (مثل "سعر السلسله: 110") بدون جملة أو أونلاين ---
         match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
         if match:
             label_part = match.group(1)
             price = int(match.group(2))
-            # تجاهل الأسعار التي تحتوي على "جملة" أو "جمله" في السطر الأصلي
-            if re.search(r'(?:جملة|جمله)', line, re.IGNORECASE):
-                continue  # سعر الجملة لا نريده
-            # إذا كان السطر يحتوي على "اونلاين"، نحدث السعر العام فقط (تم أعلاه)
-            if re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
-                continue  # تجنب التكرار
-            # خلاف ذلك، هو سعر مسمى حقيقي
+            if re.search(r'(?:جملة|جمله|اونلاين|online)', line, re.IGNORECASE):
+                continue  # لا نعالجها هنا
             clean_label = re.sub(r'\s*(?:اونلاين|online)\s*', '', label_part, flags=re.IGNORECASE).strip()
             retail_price = RETAIL_MAPPING.get(price, price)
             arabic_price = convert_to_arabic_numbers(retail_price)
             labeled_prices.append(f"{clean_label}: 💰 {arabic_price} ج 🔥")
             continue
 
-        # --- التعامل مع نمط "المنتج ب سعر ج" ---
+        # --- نمط "المنتج ب سعر ج" ---
         direct_match = re.search(r'^(.+?)\s+ب\s+(\d+)\s*(?:ج|جنيه)', line, re.IGNORECASE)
         if direct_match and not re.search(r'(?:جملة|جمله|اونلاين|online|قطعه|قطعة|السعر|price|عرض)', line, re.IGNORECASE):
             product_name = direct_match.group(1).strip()
@@ -282,15 +268,15 @@ def build_text(original_text, source_id, msg_date, current_num):
                 new_lines.append(cleaned_line)
             continue
 
-        # --- تحديث اسم المنتج (أسطر بدون أرقام) ---
         if not re.search(r'\d', line) and line.strip():
             last_product_name = line.strip()
         new_lines.append(line)
 
     norm_text = "\n".join(new_lines)
 
-    # محاولة استخراج السعر مرة أخرى من النص المنقح
-    found_price_val = extract_real_price(norm_text) or found_price_val
+    # محاولة أخيرة لاستخراج السعر العام من النص المتبقي (إذا لم نجد أونلاين)
+    if found_price_val is None:
+        found_price_val = extract_real_price(norm_text)
 
     new_labeled = []
     for name, prices in product_prices.items():
@@ -430,7 +416,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     return "\n".join(parts)
 
 # ==========================================
-# 3. نظام النشر
+# 3. نظام النشر (بدون تغيير)
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
