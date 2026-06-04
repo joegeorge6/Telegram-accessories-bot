@@ -214,6 +214,9 @@ def build_text(original_text, source_id, msg_date, current_num):
     norm_text = re.sub(r'ختم\s*AS', '', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'(?:الانسياب|انسياب)', 'الانسيال', norm_text, flags=re.IGNORECASE)
 
+    # ✅ تصحيح إملائي: "سعو" -> "سعر"
+    norm_text = re.sub(r'\bسعو\b', 'سعر', norm_text)
+
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
 
@@ -223,7 +226,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     last_product_name = None
     product_prices = {}
 
-    # ✅ فحص استباقي لـ "عرض خاص" لضمان الأولوية القصوى
     special_offer_match = re.search(r'عرض\s+خا+ص\s*(\d+)', norm_text, re.IGNORECASE)
     has_special_offer = False
     if special_offer_match:
@@ -242,9 +244,9 @@ def build_text(original_text, source_id, msg_date, current_num):
                     product_prices.setdefault(last_product_name, {})["jomla"] = price
             continue
 
-        # --- سطر الأونلاين: استخراج مباشر لأول رقم ---
+        # --- سطر الأونلاين ---
         if re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
-            if not has_special_offer:  # فقط إذا لم يكن هناك عرض خاص
+            if not has_special_offer:
                 match_online = re.search(r'(\d+)', line)
                 if match_online:
                     price = int(match_online.group(1))
@@ -253,8 +255,11 @@ def build_text(original_text, source_id, msg_date, current_num):
                         product_prices.setdefault(last_product_name, {})["online"] = price
             continue
 
-        # --- الأسعار المسماة (مثل "سعر السلسله: 110") ---
-        # إذا كان هناك "عرض خاص"، نتجاهل أي أسعار مسماة
+        # --- تجاهل سطور "كود" المستقلة (مثل "كود 172") ---
+        if re.match(r'^كود\s+\d+', line, re.IGNORECASE):
+            continue
+
+        # --- الأسعار المسماة ---
         if not has_special_offer:
             match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
             if match:
@@ -317,7 +322,7 @@ def build_text(original_text, source_id, msg_date, current_num):
         elif "jomla" in only_product:
             found_price_val = only_product["jomla"]
 
-    # --- تنظيف النص (بما في ذلك حذف سطر "عرض خاص") ---
+    # --- تنظيف النص ---
     cleaned_lines = []
     size_mode = False
     for line in norm_text.split('\n'):
@@ -355,7 +360,6 @@ def build_text(original_text, source_id, msg_date, current_num):
         if re.search(r'\bL\s*\.?\s*E\b', line, re.IGNORECASE) or re.search(r'\bLe\b', line):
             continue
 
-        # قاعدة معالجة العروض (إزالة جزء "عرض" فقط)
         if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
             line = re.sub(r'^.*?عرض\s*\S*\s*', '', line, flags=re.IGNORECASE).strip()
             if not line:
@@ -557,12 +561,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.57 Ready!"
+    return "Retail Pro Bot v2.3.59 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.57 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.59 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
