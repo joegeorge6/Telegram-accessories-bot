@@ -148,12 +148,17 @@ def extract_real_price(text):
     if cart_match:
         return int(cart_match.group(1))
 
-    # ✅ سعر الأونلاين و ما شابه له الأولوية هنا
-    price_match = re.search(r'(?<![\u0600-\u06FF])(?:الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)(?![\u0600-\u06FF])\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
-    if price_match:
-        return int(price_match.group(1))
+    # ✅ الأونلاين أول — سطر بسطر، بشرط مفيش "جملة" في نفس السطر
+    for line in clean_for_search.split('\n'):
+        if re.search(r'(?:اونلاين|الاونلاين|الأونلاين|أونلاين|online)', line, re.IGNORECASE):
+            if not re.search(r'(?:جمله|جملة)', line, re.IGNORECASE):
+                m = re.search(r'(?:اونلاين|الاونلاين|الأونلاين|أونلاين|online)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
+                if not m:
+                    m = re.search(r'(?:سعر\s+القطع[هة]|قطع[هة]|بسعر|السعر)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
+                if m:
+                    return int(m.group(1))
 
-    # ✅ سعر الجملة لن يلتقط "فالجملة" بسبب (?<![\u0600-\u06FF])
+    # ✅ سعر الجملة فقط لو مفيش أونلاين
     wholesale_match = re.search(r'(?<![\u0600-\u06FF])(?:الجمله|الجملة|جمله|جملة)(?![\u0600-\u06FF])\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if wholesale_match:
         return int(wholesale_match.group(1))
@@ -240,6 +245,8 @@ def build_text(original_text, source_id, msg_date, current_num):
         # --- أسطر الأونلاين: تحديث السعر العام مباشرة ---
         if re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             match = re.search(r'(?:اونلاين|online)\s*(\d+)', line, re.IGNORECASE)
+            if not match:
+                match = re.search(r'(\d+)\s*(?:اونلاين|online)', line, re.IGNORECASE)
             if match:
                 price = int(match.group(1))
                 found_price_val = price  # نعتمد سعر الأونلاين كسعر عام
@@ -423,7 +430,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     return "\n".join(parts)
 
 # ==========================================
-# 3. نظام النشر (بدون تغيير)
+# 3. نظام النشر
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -552,12 +559,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.52 Ready!"
+    return "Retail Pro Bot v2.3.53 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.52 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.53 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
