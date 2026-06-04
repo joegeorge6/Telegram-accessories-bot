@@ -148,7 +148,8 @@ def extract_real_price(text):
     if cart_match:
         return int(cart_match.group(1))
 
-    price_match = re.search(r'\b(?:الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)\b\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
+    # ✅ نمط محسّن يدعم العربية: (?<!\w) و (?!\w) بدلاً من \b
+    price_match = re.search(r'(?<!\w)(?:الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)(?!\w)\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match:
         return int(price_match.group(1))
 
@@ -540,12 +541,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.49 Ready!"
+    return "Retail Pro Bot v2.3.50 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.49 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.50 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
