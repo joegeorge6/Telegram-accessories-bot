@@ -42,7 +42,10 @@ BLOCK_KEYWORDS = [
     "مطلوب شباب للعمل بشرط التفرغ \nويكون قريب من النزهه الجديده \nمواعيد العمل من 12 ل 11 \nيوم الاحد اجازه اسبوعيه \nللاستفسارات 01091714149",
     "شحن", "الشحن", "للشحن",
     "تم غلق الحجز والمحل اليوم وغداً  👈👈الاحد 👉👉الاجازه الاسبوعيه اترك رسالتك بالحجز وسوف نقوم بالرد عليك يوم الاثنين ان شاء الله \nبرجاء عدم الازعاج لا يتم الرد على اى استفسارات او حجوزات او مكالمات خلال الاجازه وشكرا",
-    "اى عميل استلم الاوردر بتاعه قبل العيد \nولسه مكتبش تم الاستلام \nيبعت حالا تم الاستلام \nلو استلمت ومكتبتش تم الاستلام مش هنفتح ليك حجز تانى"
+    "اى عميل استلم الاوردر بتاعه قبل العيد \nولسه مكتبش تم الاستلام \nيبعت حالا تم الاستلام \nلو استلمت ومكتبتش تم الاستلام مش هنفتح ليك حجز تانى",
+    "Aysel Store ✨♥️\nلينكات قنوات التليجرام 👇\n1-لينك قناة التوك https://t.me/ayselstore258\n2- لينك قناة الاكسسوار https://t.me/ayselstore55\n\n4- لينك قناة الشرابات https://t.me/+SzAH0Jb0JrnOjO32\n5- لينك قناة المنزلى https://t.me/ayselstore4\n6 -  لينك قناة الميكب https://t.me/ayselmakeup98\nلينك جروب التليجرام https://t.me/ayselstore98\n\n-  العنوان 6 ابراهيم مصطفى متفرع من المدينه المنوره النزهه الجديده القاهره \n! اللوكيشن \nhttps://maps.google.com/?q=30.127422,31.376827",
+    "كلهم حجز واحد ماعدا الادورات المنزليه جروب حجز لوحده بارقام قناة المنزليه \nوالشحن واحد 🤍🤍",
+    "تابعو ستوريهات ارقام الحجز هينزل عليها حجات باقى منها قطع وعليها خصم حلو 👌♥️"
 ]
 
 P_CODE_TRANSLATION = {
@@ -226,7 +229,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
-        # --- تجاهل أسطر الجملة/الدستة/الباكت بدون اونلاين ---
         if re.search(r'(?:جمله|دسته|دستة|باكت)', line, re.IGNORECASE) and not re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             if last_product_name:
                 match = re.search(r'(?:جمله|دسته|دستة)\s*(\d+)', line, re.IGNORECASE)
@@ -235,7 +237,6 @@ def build_text(original_text, source_id, msg_date, current_num):
                     product_prices.setdefault(last_product_name, {})["jomla"] = price
             continue
 
-        # --- سطر الأونلاين: استخراج مباشر لأول رقم واستخدامه كسعر عام وللمنتج الحالي ---
         if re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             match_online = re.search(r'(\d+)', line)
             if match_online:
@@ -245,7 +246,6 @@ def build_text(original_text, source_id, msg_date, current_num):
                     product_prices.setdefault(last_product_name, {})["online"] = price
             continue
 
-        # --- الأسعار المسماة (مثل "سعر السلسله: 110") بدون جملة أو أونلاين ---
         match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
         if match:
             label_part = match.group(1)
@@ -258,7 +258,6 @@ def build_text(original_text, source_id, msg_date, current_num):
             labeled_prices.append(f"{clean_label}: 💰 {arabic_price} ج 🔥")
             continue
 
-        # --- نمط "المنتج ب سعر ج" ---
         direct_match = re.search(r'^(.+?)\s+ب\s+(\d+)\s*(?:ج|جنيه)', line, re.IGNORECASE)
         if direct_match and not re.search(r'(?:جملة|جمله|اونلاين|online|قطعه|قطعة|السعر|price|عرض)', line, re.IGNORECASE):
             product_name = direct_match.group(1).strip()
@@ -307,7 +306,6 @@ def build_text(original_text, source_id, msg_date, current_num):
         elif "jomla" in only_product:
             found_price_val = only_product["jomla"]
 
-    # --- تنظيف النص ---
     cleaned_lines = []
     size_mode = False
     for line in norm_text.split('\n'):
@@ -345,7 +343,6 @@ def build_text(original_text, source_id, msg_date, current_num):
         if re.search(r'\bL\s*\.?\s*E\b', line, re.IGNORECASE) or re.search(r'\bLe\b', line):
             continue
 
-        # ✅ هذا هو المكان الصحيح لمعالجة "العروض" (إزالة الجزء فقط وليس السطر كله)
         if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
             line = re.sub(r'^.*?عرض\s*\S*\s*', '', line, flags=re.IGNORECASE).strip()
             if not line:
@@ -547,12 +544,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.55 Ready!"
+    return "Retail Pro Bot v2.3.57 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.55 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.57 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
