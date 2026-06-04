@@ -43,9 +43,7 @@ BLOCK_KEYWORDS = [
     "شحن", "الشحن", "للشحن",
     "تم غلق الحجز والمحل اليوم وغداً  👈👈الاحد 👉👉الاجازه الاسبوعيه اترك رسالتك بالحجز وسوف نقوم بالرد عليك يوم الاثنين ان شاء الله \nبرجاء عدم الازعاج لا يتم الرد على اى استفسارات او حجوزات او مكالمات خلال الاجازه وشكرا",
     "اى عميل استلم الاوردر بتاعه قبل العيد \nولسه مكتبش تم الاستلام \nيبعت حالا تم الاستلام \nلو استلمت ومكتبتش تم الاستلام مش هنفتح ليك حجز تانى",
-    "Aysel Store ✨♥️\nلينكات قنوات التليجرام 👇\n1-لينك قناة التوك https://t.me/ayselstore258\n2- لينك قناة الاكسسوار https://t.me/ayselstore55\n\n4- لينك قناة الشرابات https://t.me/+SzAH0Jb0JrnOjO32\n5- لينك قناة المنزلى https://t.me/ayselstore4\n6 -  لينك قناة الميكب https://t.me/ayselmakeup98\nلينك جروب التليجرام https://t.me/ayselstore98\n\n-  العنوان 6 ابراهيم مصطفى متفرع من المدينه المنوره النزهه الجديده القاهره \n! اللوكيشن \nhttps://maps.google.com/?q=30.127422,31.376827",
-    "كلهم حجز واحد ماعدا الادورات المنزليه جروب حجز لوحده بارقام قناة المنزليه \nوالشحن واحد 🤍🤍",
-    "تابعو ستوريهات ارقام الحجز هينزل عليها حجات باقى منها قطع وعليها خصم حلو 👌♥️"
+    "Aysel Store ✨♥️\nلينكات قنوات التليجرام 👇\n1-لينك قناة التوك https://t.me/ayselstore258\n2- لينك قناة الاكسسوار https://t.me/ayselstore55\n\n4- لينك قناة الشرابات https://t.me/+SzAH0Jb0JrnOjO32\n5- لينك قناة المنزلى https://t.me/ayselstore4\n6 -  لينك قناة الميكب https://t.me/ayselmakeup98\nلينك جروب التليجرام https://t.me/ayselstore98\n\n-  العنوان 6 ابراهيم مصطفى متفرع من المدينه المنوره النزهه الجديده القاهره \n! اللوكيشن \nhttps://maps.google.com/?q=30.127422,31.376827"
 ]
 
 P_CODE_TRANSLATION = {
@@ -221,14 +219,21 @@ def build_text(original_text, source_id, msg_date, current_num):
 
     found_price_val = None
     fallback_prices = []
-
     labeled_prices = []
     last_product_name = None
     product_prices = {}
 
+    # ✅ فحص استباقي لـ "عرض خاص" لضمان الأولوية القصوى
+    special_offer_match = re.search(r'عرض\s+خا+ص\s*(\d+)', norm_text, re.IGNORECASE)
+    has_special_offer = False
+    if special_offer_match:
+        found_price_val = int(special_offer_match.group(1))
+        has_special_offer = True
+
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
+        # --- تجاهل أسطر الجملة/الدستة/الباكت بدون اونلاين ---
         if re.search(r'(?:جمله|دسته|دستة|باكت)', line, re.IGNORECASE) and not re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             if last_product_name:
                 match = re.search(r'(?:جمله|دسته|دستة)\s*(\d+)', line, re.IGNORECASE)
@@ -237,27 +242,33 @@ def build_text(original_text, source_id, msg_date, current_num):
                     product_prices.setdefault(last_product_name, {})["jomla"] = price
             continue
 
+        # --- سطر الأونلاين: استخراج مباشر لأول رقم ---
         if re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
-            match_online = re.search(r'(\d+)', line)
-            if match_online:
-                price = int(match_online.group(1))
-                found_price_val = price
-                if last_product_name:
-                    product_prices.setdefault(last_product_name, {})["online"] = price
+            if not has_special_offer:  # فقط إذا لم يكن هناك عرض خاص
+                match_online = re.search(r'(\d+)', line)
+                if match_online:
+                    price = int(match_online.group(1))
+                    found_price_val = price
+                    if last_product_name:
+                        product_prices.setdefault(last_product_name, {})["online"] = price
             continue
 
-        match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
-        if match:
-            label_part = match.group(1)
-            price = int(match.group(2))
-            if re.search(r'(?:جملة|جمله|اونلاين|online)', line, re.IGNORECASE):
+        # --- الأسعار المسماة (مثل "سعر السلسله: 110") ---
+        # إذا كان هناك "عرض خاص"، نتجاهل أي أسعار مسماة
+        if not has_special_offer:
+            match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
+            if match:
+                label_part = match.group(1)
+                price = int(match.group(2))
+                if re.search(r'(?:جملة|جمله|اونلاين|online)', line, re.IGNORECASE):
+                    continue
+                clean_label = re.sub(r'\s*(?:اونلاين|online)\s*', '', label_part, flags=re.IGNORECASE).strip()
+                retail_price = RETAIL_MAPPING.get(price, price)
+                arabic_price = convert_to_arabic_numbers(retail_price)
+                labeled_prices.append(f"{clean_label}: 💰 {arabic_price} ج 🔥")
                 continue
-            clean_label = re.sub(r'\s*(?:اونلاين|online)\s*', '', label_part, flags=re.IGNORECASE).strip()
-            retail_price = RETAIL_MAPPING.get(price, price)
-            arabic_price = convert_to_arabic_numbers(retail_price)
-            labeled_prices.append(f"{clean_label}: 💰 {arabic_price} ج 🔥")
-            continue
 
+        # --- نمط "المنتج ب سعر ج" ---
         direct_match = re.search(r'^(.+?)\s+ب\s+(\d+)\s*(?:ج|جنيه)', line, re.IGNORECASE)
         if direct_match and not re.search(r'(?:جملة|جمله|اونلاين|online|قطعه|قطعة|السعر|price|عرض)', line, re.IGNORECASE):
             product_name = direct_match.group(1).strip()
@@ -297,7 +308,7 @@ def build_text(original_text, source_id, msg_date, current_num):
             norm_text = re.sub(re.escape(name), '', norm_text)
         labeled_prices.extend(new_labeled)
         found_price_val = None
-    elif len(product_prices) == 1:
+    elif len(product_prices) == 1 and not has_special_offer:
         only_product = list(product_prices.values())[0]
         if "online" in only_product:
             found_price_val = only_product["online"]
@@ -306,6 +317,7 @@ def build_text(original_text, source_id, msg_date, current_num):
         elif "jomla" in only_product:
             found_price_val = only_product["jomla"]
 
+    # --- تنظيف النص (بما في ذلك حذف سطر "عرض خاص") ---
     cleaned_lines = []
     size_mode = False
     for line in norm_text.split('\n'):
@@ -343,6 +355,7 @@ def build_text(original_text, source_id, msg_date, current_num):
         if re.search(r'\bL\s*\.?\s*E\b', line, re.IGNORECASE) or re.search(r'\bLe\b', line):
             continue
 
+        # قاعدة معالجة العروض (إزالة جزء "عرض" فقط)
         if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
             line = re.sub(r'^.*?عرض\s*\S*\s*', '', line, flags=re.IGNORECASE).strip()
             if not line:
