@@ -50,8 +50,6 @@ P_CODE_TRANSLATION = {
     "C": "كوليه", "E": "حلق", "R": "خاتم", "B": "اسورة"
 }
 
-# (باقي الدوال والمتغيرات كما هي في الإصدار السابق دون تغيير)
-
 def load_counters():
     if not os.path.exists(COUNTERS_FILE):
         return {}
@@ -228,6 +226,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
+        # --- التعامل مع جملة/دسته/باكت بدون اونلاين ---
         if re.search(r'(?:جمله|دسته|دستة|باكت)', line, re.IGNORECASE) and not re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             if last_product_name:
                 match = re.search(r'(?:جمله|دسته|دستة)\s*(\d+)', line, re.IGNORECASE)
@@ -236,6 +235,7 @@ def build_text(original_text, source_id, msg_date, current_num):
                     product_prices.setdefault(last_product_name, {})["jomla"] = price
             continue
 
+        # --- التعامل مع أونلاين ---
         if re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             match = re.search(r'(?:اونلاين|online)\s*(\d+)', line, re.IGNORECASE)
             if match:
@@ -244,6 +244,7 @@ def build_text(original_text, source_id, msg_date, current_num):
                     product_prices.setdefault(last_product_name, {})["online"] = price
             continue
 
+        # --- التعامل مع سعر مسمى (مثل "سعر السلسله: 110") ---
         match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
         if match:
             label_part = match.group(1)
@@ -257,14 +258,21 @@ def build_text(original_text, source_id, msg_date, current_num):
             else:
                 continue
 
+        # --- 🆕 التعامل مع نمط "المنتج ب سعر ج" (معدّل) ---
         direct_match = re.search(r'^(.+?)\s+ب\s+(\d+)\s*(?:ج|جنيه)', line, re.IGNORECASE)
         if direct_match and not re.search(r'(?:جملة|جمله|اونلاين|online|قطعه|قطعة|السعر|price|عرض)', line, re.IGNORECASE):
             product_name = direct_match.group(1).strip()
             price = int(direct_match.group(2))
+            # نخزن السعر
             product_prices.setdefault(product_name, {})["direct"] = price
             last_product_name = product_name
+            # نزيل "ب 65 ج" ونضيف السطر بعد التنظيف
+            cleaned_line = re.sub(r'\s*ب\s+\d+\s*(?:ج|جنيه).*', '', line, flags=re.IGNORECASE).strip()
+            if cleaned_line:
+                new_lines.append(cleaned_line)
             continue
 
+        # --- تحديث اسم المنتج (أسطر بدون أرقام) ---
         if not re.search(r'\d', line) and line.strip():
             last_product_name = line.strip()
         new_lines.append(line)
@@ -287,6 +295,7 @@ def build_text(original_text, source_id, msg_date, current_num):
             arabic_price = convert_to_arabic_numbers(retail_price)
             new_labeled.append(f"{name} بسعر : 💰 {arabic_price} ج 🔥")
 
+    # إذا تعدد المنتجات، نخفي أسماءها من الوصف ونضيف الأسعار المسماة
     if len(product_prices) > 1:
         for name in product_prices.keys():
             norm_text = re.sub(re.escape(name), '', norm_text)
@@ -300,7 +309,9 @@ def build_text(original_text, source_id, msg_date, current_num):
             found_price_val = only_product["direct"]
         elif "jomla" in only_product:
             found_price_val = only_product["jomla"]
+        # لا نضيف new_labeled للمنتج الواحد ليبقى في الوصف
 
+    # --- تنظيف النص النهائي ---
     cleaned_lines = []
     size_mode = False
     for line in norm_text.split('\n'):
@@ -410,7 +421,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     return "\n".join(parts)
 
 # ==========================================
-# 3. نظام النشر
+# 3. نظام النشر (بدون تغيير)
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -539,12 +550,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.47 Ready!"
+    return "Retail Pro Bot v2.3.48 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.47 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.48 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
