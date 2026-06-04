@@ -148,7 +148,6 @@ def extract_real_price(text):
     if cart_match:
         return int(cart_match.group(1))
 
-    # هذه الأنماط أصبحت احتياطية لأن المنطق الرئيسي في build_text
     price_match = re.search(r'(?<![\u0600-\u06FF])(?:الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)(?![\u0600-\u06FF])\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
     if price_match:
         return int(price_match.group(1))
@@ -217,7 +216,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
 
-    found_price_val = None  # لن نستخرج من النص الكامل الآن
+    found_price_val = None
     fallback_prices = []
 
     labeled_prices = []
@@ -236,12 +235,15 @@ def build_text(original_text, source_id, msg_date, current_num):
                     product_prices.setdefault(last_product_name, {})["jomla"] = price
             continue
 
-        # --- 🎯 سطر الأونلاين: استخراج مباشر لأول رقم واستخدامه كسعر عام ---
+        # --- سطر الأونلاين: استخراج مباشر لأول رقم واستخدامه كسعر عام وللمنتج الحالي ---
         if re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             match_online = re.search(r'(\d+)', line)
             if match_online:
-                found_price_val = int(match_online.group(1))
-            continue  # لا نضيف السطر إلى new_lines
+                price = int(match_online.group(1))
+                found_price_val = price
+                if last_product_name:
+                    product_prices.setdefault(last_product_name, {})["online"] = price
+            continue
 
         # --- الأسعار المسماة (مثل "سعر السلسله: 110") بدون جملة أو أونلاين ---
         match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
@@ -249,7 +251,7 @@ def build_text(original_text, source_id, msg_date, current_num):
             label_part = match.group(1)
             price = int(match.group(2))
             if re.search(r'(?:جملة|جمله|اونلاين|online)', line, re.IGNORECASE):
-                continue  # لا نعالجها هنا
+                continue
             clean_label = re.sub(r'\s*(?:اونلاين|online)\s*', '', label_part, flags=re.IGNORECASE).strip()
             retail_price = RETAIL_MAPPING.get(price, price)
             arabic_price = convert_to_arabic_numbers(retail_price)
@@ -274,7 +276,6 @@ def build_text(original_text, source_id, msg_date, current_num):
 
     norm_text = "\n".join(new_lines)
 
-    # محاولة أخيرة لاستخراج السعر العام من النص المتبقي (إذا لم نجد أونلاين)
     if found_price_val is None:
         found_price_val = extract_real_price(norm_text)
 
@@ -344,6 +345,7 @@ def build_text(original_text, source_id, msg_date, current_num):
         if re.search(r'\bL\s*\.?\s*E\b', line, re.IGNORECASE) or re.search(r'\bLe\b', line):
             continue
 
+        # ✅ هذا هو المكان الصحيح لمعالجة "العروض" (إزالة الجزء فقط وليس السطر كله)
         if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
             line = re.sub(r'^.*?عرض\s*\S*\s*', '', line, flags=re.IGNORECASE).strip()
             if not line:
@@ -545,12 +547,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.53 Ready!"
+    return "Retail Pro Bot v2.3.55 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.53 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.55 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
