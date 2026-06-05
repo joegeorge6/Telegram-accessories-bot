@@ -200,7 +200,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     if re.search(r'HEMA\s*STORE', original_text, re.IGNORECASE):
         return ""
     
-    # ✅ منع أي نص يحتوي على رابط (https:// أو http://)
+    # ✅ منع أي نص يحتوي على رابط
     if re.search(r'https?://', original_text, re.IGNORECASE):
         return None
     
@@ -211,7 +211,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     if is_emoji_only(norm_text):
         return ""
 
-    norm_text = re.sub(r'(?<![a-zA-Z])infinity(?![a-zA-Z])', 'فاشونيستا', norm_text, flags=re.IGNORECASE)
+    norm_text = re.sub(r'(?<![a-zA-Z])(?:infiniyu|infinity)(?![a-zA-Z])', 'فاشونيستا', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'(?:استالس|ستالس|استانليس)', 'استانلس', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\bبلاتيد\b', 'بليتد', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\bزركون\b', 'زيركون', norm_text, flags=re.IGNORECASE)
@@ -551,12 +551,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.61 Ready!"
+    return "Retail Pro Bot v2.3.62 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.61 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.62 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
