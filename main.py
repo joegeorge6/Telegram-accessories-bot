@@ -200,6 +200,10 @@ def build_text(original_text, source_id, msg_date, current_num):
     if re.search(r'HEMA\s*STORE', original_text, re.IGNORECASE):
         return ""
     
+    # ✅ منع أي نص يحتوي على رابط (https:// أو http://)
+    if re.search(r'https?://', original_text, re.IGNORECASE):
+        return None
+    
     norm_text = normalize_numbers(original_text)
 
     if any(word in norm_text for word in BLOCK_KEYWORDS): return None
@@ -213,8 +217,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     norm_text = re.sub(r'\bزركون\b', 'زيركون', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'ختم\s*AS', '', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'(?:الانسياب|انسياب)', 'الانسيال', norm_text, flags=re.IGNORECASE)
-
-    # ✅ تصحيح إملائي: "سعو" -> "سعر"
     norm_text = re.sub(r'\bسعو\b', 'سعر', norm_text)
 
     for word in WORDS_TO_REMOVE:
@@ -235,7 +237,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     lines = norm_text.split('\n')
     new_lines = []
     for line in lines:
-        # --- تجاهل أسطر الجملة/الدستة/الباكت بدون اونلاين ---
         if re.search(r'(?:جمله|دسته|دستة|باكت)', line, re.IGNORECASE) and not re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             if last_product_name:
                 match = re.search(r'(?:جمله|دسته|دستة)\s*(\d+)', line, re.IGNORECASE)
@@ -244,7 +245,6 @@ def build_text(original_text, source_id, msg_date, current_num):
                     product_prices.setdefault(last_product_name, {})["jomla"] = price
             continue
 
-        # --- سطر الأونلاين ---
         if re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
             if not has_special_offer:
                 match_online = re.search(r'(\d+)', line)
@@ -255,11 +255,9 @@ def build_text(original_text, source_id, msg_date, current_num):
                         product_prices.setdefault(last_product_name, {})["online"] = price
             continue
 
-        # --- تجاهل سطور "كود" المستقلة (مثل "كود 172") ---
         if re.match(r'^كود\s+\d+', line, re.IGNORECASE):
             continue
 
-        # --- الأسعار المسماة ---
         if not has_special_offer:
             match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
             if match:
@@ -273,16 +271,12 @@ def build_text(original_text, source_id, msg_date, current_num):
                 labeled_prices.append(f"{clean_label}: 💰 {arabic_price} ج 🔥")
                 continue
 
-        # --- نمط "المنتج ب سعر ج" ---
         direct_match = re.search(r'^(.+?)\s+ب\s+(\d+)\s*(?:ج|جنيه)', line, re.IGNORECASE)
         if direct_match and not re.search(r'(?:جملة|جمله|اونلاين|online|قطعه|قطعة|السعر|price|عرض)', line, re.IGNORECASE):
             product_name = direct_match.group(1).strip()
             price = int(direct_match.group(2))
             product_prices.setdefault(product_name, {})["direct"] = price
             last_product_name = product_name
-            cleaned_line = re.sub(r'\s*ب\s+\d+\s*(?:ج|جنيه).*', '', line, flags=re.IGNORECASE).strip()
-            if cleaned_line:
-                new_lines.append(cleaned_line)
             continue
 
         if not re.search(r'\d', line) and line.strip():
@@ -308,21 +302,17 @@ def build_text(original_text, source_id, msg_date, current_num):
             arabic_price = convert_to_arabic_numbers(retail_price)
             new_labeled.append(f"{name} بسعر : 💰 {arabic_price} ج 🔥")
 
-    if len(product_prices) > 1:
+    if len(product_prices) == 1:
+        labeled_prices.extend(new_labeled)
+        only_name = list(product_prices.keys())[0]
+        norm_text = re.sub(re.escape(only_name), '', norm_text)
+        found_price_val = None
+    elif len(product_prices) > 1:
         for name in product_prices.keys():
             norm_text = re.sub(re.escape(name), '', norm_text)
         labeled_prices.extend(new_labeled)
         found_price_val = None
-    elif len(product_prices) == 1 and not has_special_offer:
-        only_product = list(product_prices.values())[0]
-        if "online" in only_product:
-            found_price_val = only_product["online"]
-        elif "direct" in only_product:
-            found_price_val = only_product["direct"]
-        elif "jomla" in only_product:
-            found_price_val = only_product["jomla"]
 
-    # --- تنظيف النص ---
     cleaned_lines = []
     size_mode = False
     for line in norm_text.split('\n'):
@@ -561,12 +551,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.59 Ready!"
+    return "Retail Pro Bot v2.3.61 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.59 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.61 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
