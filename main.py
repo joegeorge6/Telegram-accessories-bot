@@ -200,7 +200,6 @@ def build_text(original_text, source_id, msg_date, current_num):
     if re.search(r'HEMA\s*STORE', original_text, re.IGNORECASE):
         return ""
     
-    # ✅ منع أي نص يحتوي على رابط
     if re.search(r'https?://', original_text, re.IGNORECASE):
         return None
     
@@ -279,8 +278,7 @@ def build_text(original_text, source_id, msg_date, current_num):
             last_product_name = product_name
             continue
 
-        if not re.search(r'\d', line) and line.strip():
-            last_product_name = line.strip()
+        # ✅ التعديل الجذري: لا يتم تخمين أسماء المنتجات من الأسطر الوصفية إطلاقًا
         new_lines.append(line)
 
     norm_text = "\n".join(new_lines)
@@ -551,12 +549,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.62 Ready!"
+    return "Retail Pro Bot v2.3.64 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.62 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.64 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
