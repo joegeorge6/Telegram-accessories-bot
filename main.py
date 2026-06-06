@@ -278,7 +278,11 @@ def build_text(original_text, source_id, msg_date, current_num):
             last_product_name = product_name
             continue
 
-        # ✅ التعديل الجذري: لا يتم تخمين أسماء المنتجات من الأسطر الوصفية إطلاقًا
+        if not re.search(r'\d', line) and line.strip():
+            # ✅ إعادة التخمين الآمن: فقط كلمة أو كلمتين فعليتين (بدون رموز طويلة) تصبح أسماء منتجات
+            words = line.strip().split()
+            if len(words) <= 2 and all(len(w) <= 15 for w in words):  # قصير وغير معقد
+                last_product_name = line.strip()
         new_lines.append(line)
 
     norm_text = "\n".join(new_lines)
@@ -549,12 +553,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.64 Ready!"
+    return "Retail Pro Bot v2.3.66 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.64 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.66 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
