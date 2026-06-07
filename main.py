@@ -278,11 +278,12 @@ def build_text(original_text, source_id, msg_date, current_num):
             last_product_name = product_name
             continue
 
+        # ✅ التعديل: تجاهل أي سطر يحتوي على حروف لاتينية عند تخمين أسماء المنتجات
         if not re.search(r'\d', line) and line.strip():
-            # ✅ إعادة التخمين الآمن: فقط كلمة أو كلمتين فعليتين (بدون رموز طويلة) تصبح أسماء منتجات
-            words = line.strip().split()
-            if len(words) <= 2 and all(len(w) <= 15 for w in words):  # قصير وغير معقد
-                last_product_name = line.strip()
+            if not re.search(r'[A-Za-z]', line):  # <-- لا حروف إنجليزية
+                words = line.strip().split()
+                if len(words) <= 2 and all(len(w) <= 15 for w in words):
+                    last_product_name = line.strip()
         new_lines.append(line)
 
     norm_text = "\n".join(new_lines)
@@ -353,9 +354,12 @@ def build_text(original_text, source_id, msg_date, current_num):
             continue
 
         if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
-            line = re.sub(r'^.*?عرض\s*\S*\s*', '', line, flags=re.IGNORECASE).strip()
-            if not line:
-                continue
+            if re.search(r'عرض\s+\d+\s*(?:mm|cm|مم|سم|متر|ملي|inch|بوصة)', line, re.IGNORECASE):
+                pass
+            else:
+                line = re.sub(r'^.*?عرض\s*\S*\s*', '', line, flags=re.IGNORECASE).strip()
+                if not line:
+                    continue
 
         if re.search(r'(?:للحجز|طلب الاوردر|للطلب)', line, re.IGNORECASE):
             continue
@@ -553,12 +557,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.66 Ready!"
+    return "Retail Pro Bot v2.3.68 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.66 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.68 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
