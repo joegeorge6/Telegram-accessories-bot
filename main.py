@@ -278,9 +278,8 @@ def build_text(original_text, source_id, msg_date, current_num):
             last_product_name = product_name
             continue
 
-        # ✅ التعديل: تجاهل أي سطر يحتوي على حروف لاتينية عند تخمين أسماء المنتجات
         if not re.search(r'\d', line) and line.strip():
-            if not re.search(r'[A-Za-z]', line):  # <-- لا حروف إنجليزية
+            if not re.search(r'[A-Za-z]', line):
                 words = line.strip().split()
                 if len(words) <= 2 and all(len(w) <= 15 for w in words):
                     last_product_name = line.strip()
@@ -428,7 +427,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     return "\n".join(parts)
 
 # ==========================================
-# 3. نظام النشر (بدون تغيير)
+# 3. نظام النشر (تم استعادة اللوج القديم)
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -470,6 +469,7 @@ async def safe_send(client, messages, source_id):
 
     try:
         media_count = len(valid_messages)
+        # ✅ تم استعادة اللوج القديم كما كان بالضبط
         print(f"📤 Sending group of {media_count} media, ID {messages[0].id}, Code: {current_num:02d}")
         for m in valid_messages:
             if m.photo: await client.send_photo(RETAIL_CHANNEL, m.photo.file_id)
@@ -557,12 +557,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.68 Ready!"
+    return "Retail Pro Bot v2.3.69 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.68 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.69 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
