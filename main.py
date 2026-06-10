@@ -258,7 +258,8 @@ def build_text(original_text, source_id, msg_date, current_num):
             continue
 
         if not has_special_offer:
-            match = re.search(r'(سعر\s+[\u0600-\u06FF\w]+)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
+            # ✅ تم تعديل النمط ليتجاهل الأرقام الصغيرة (أقل من 10) ويأخذ السعر الحقيقي
+            match = re.search(r'(سعر\s+.+?)\s+(\d{2,4})\b', line, re.IGNORECASE)
             if match:
                 label_part = match.group(1)
                 price = int(match.group(2))
@@ -281,7 +282,6 @@ def build_text(original_text, source_id, msg_date, current_num):
         if not re.search(r'\d', line) and line.strip():
             if not re.search(r'[A-Za-z]', line):
                 words = line.strip().split()
-                # ✅ تعديل: السماح بـ 3 كلمات إذا كان السطر يحتوي على ✅
                 max_words = 3 if '✅' in line else 2
                 if len(words) <= max_words and all(len(w) <= 15 for w in words):
                     last_product_name = line.strip()
@@ -558,12 +558,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.70 Ready!"
+    return "Retail Pro Bot v2.3.71 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.70 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.71 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
