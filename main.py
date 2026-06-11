@@ -43,7 +43,9 @@ BLOCK_KEYWORDS = [
     "شحن", "الشحن", "للشحن",
     "تم غلق الحجز والمحل اليوم وغداً  👈👈الاحد 👉👉الاجازه الاسبوعيه اترك رسالتك بالحجز وسوف نقوم بالرد عليك يوم الاثنين ان شاء الله \nبرجاء عدم الازعاج لا يتم الرد على اى استفسارات او حجوزات او مكالمات خلال الاجازه وشكرا",
     "اى عميل استلم الاوردر بتاعه قبل العيد \nولسه مكتبش تم الاستلام \nيبعت حالا تم الاستلام \nلو استلمت ومكتبتش تم الاستلام مش هنفتح ليك حجز تانى",
-    "Aysel Store ✨♥️\nلينكات قنوات التليجرام 👇\n1-لينك قناة التوك https://t.me/ayselstore258\n2- لينك قناة الاكسسوار https://t.me/ayselstore55\n\n4- لينك قناة الشرابات https://t.me/+SzAH0Jb0JrnOjO32\n5- لينك قناة المنزلى https://t.me/ayselstore4\n6 -  لينك قناة الميكب https://t.me/ayselmakeup98\nلينك جروب التليجرام https://t.me/ayselstore98\n\n-  العنوان 6 ابراهيم مصطفى متفرع من المدينه المنوره النزهه الجديده القاهره \n! اللوكيشن \nhttps://maps.google.com/?q=30.127422,31.376827"
+    "Aysel Store ✨♥️\nلينكات قنوات التليجرام 👇\n1-لينك قناة التوك https://t.me/ayselstore258\n2- لينك قناة الاكسسوار https://t.me/ayselstore55\n\n4- لينك قناة الشرابات https://t.me/+SzAH0Jb0JrnOjO32\n5- لينك قناة المنزلى https://t.me/ayselstore4\n6 -  لينك قناة الميكب https://t.me/ayselmakeup98\nلينك جروب التليجرام https://t.me/ayselstore98\n\n-  العنوان 6 ابراهيم مصطفى متفرع من المدينه المنوره النزهه الجديده القاهره \n! اللوكيشن \nhttps://maps.google.com/?q=30.127422,31.376827",
+    # النص الجديد المطلوب منعه:
+    "مدة الحجز من اسبوع ل 10 ايام اللى عدا مدة الحجز يتابع على جروب حجزه تجنباً لفك الحجز ♥️♥️"
 ]
 
 P_CODE_TRANSLATION = {
@@ -558,12 +560,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.71 Ready!"
+    return "Retail Pro Bot v2.3.72 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.71 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.72 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
