@@ -137,6 +137,64 @@ def mark_msg_as_processed(msg_id, source_id):
     with open(DB_FILE, "a") as f:
         f.write(f"{source_id}:{msg_id}\n")
 
+def extract_real_price(text):
+    if not text: return None
+    norm_text = normalize_numbers(text)
+    clean_for_search = re.sub(r'\d+\s*(?:سم|س|M|CM|ملي|متر|شكل|لون|ق)', '', norm_text, flags=re.IGNORECASE)
+
+    special_offer = re.search(r'عرض\s+خا+ص\s*(\d+)', clean_for_search, re.IGNORECASE)
+    if special_offer:
+        return int(special_offer.group(1))
+
+    cart_match = re.search(r'(?:الكارت كله|الكارت)\s*ب\s*(\d+)', clean_for_search, re.IGNORECASE)
+    if cart_match:
+        return int(cart_match.group(1))
+
+    price_match = re.search(r'(?<![\u0600-\u06FF])(?:الاونلاين|الأونلاين|أونلاين|اونلاين|online|سعر القطعه|قطعه|قطعة|بسعر|السعر|price|L\.E|LE)(?![\u0600-\u06FF])\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
+    if price_match:
+        return int(price_match.group(1))
+
+    wholesale_match = re.search(r'(?<![\u0600-\u06FF])(?:الجمله|الجملة|جمله|جملة)(?![\u0600-\u06FF])\s*[:：]?\s*(\d+)', clean_for_search, re.IGNORECASE)
+    if wholesale_match:
+        return int(wholesale_match.group(1))
+
+    nums = [int(n) for n in re.findall(r'(\d+)', clean_for_search) if 15 <= int(n) <= 2000]
+    return nums[-1] if nums else None
+
+def is_emoji_only(text):
+    if not text or not text.strip():
+        return False
+    cleaned = re.sub(r'[\s\u200d]', '', text)
+    if not cleaned:
+        return False
+    emoji_pattern = re.compile(
+        "[\U0001F300-\U0001F5FF"
+        "\U0001F600-\U0001F64F"
+        "\U0001F680-\U0001F6FF"
+        "\U0001F1E0-\U0001F1FF"
+        "\U00002702-\U000027B0"
+        "\U000024C2-\U0001F251"
+        "\U0001F900-\U0001F9FF"
+        "\U0001FA00-\U0001FA6F"
+        "\U0001FA70-\U0001FAFF"
+        "\U00002600-\U000026FF"
+        "\U0000FE00-\U0000FE0F"
+        "\U0000200D"
+        "\U00002B50"
+        "\U00002764"
+        "\U0001F004"
+        "\U0001F0CF"
+        "]+", flags=re.UNICODE)
+    return bool(emoji_pattern.fullmatch(cleaned))
+
+def is_number_emoji_line(line):
+    if not line: return False
+    if re.search(r'[A-Za-z\u0600-\u06FF]', line):
+        return False
+    if re.search(r'\d', line):
+        return True
+    return False
+
 def extract_online_price_from_line(line):
     """استخراج سعر الأونلاين من سطر يحتوي على 'اونلاين'"""
     match = re.search(r'(?:اونلاين|online)\s*(\d+)', line, re.IGNORECASE)
@@ -164,7 +222,6 @@ def build_text(original_text, source_id, msg_date, current_num):
 
     norm_text = normalize_numbers(original_text)
 
-    # حظر الكلمات الممنوعة
     if any(word in norm_text for word in BLOCK_KEYWORDS):
         return None
 
@@ -183,32 +240,26 @@ def build_text(original_text, source_id, msg_date, current_num):
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
 
-    # تقسيم النص إلى أسطر
     lines = norm_text.split('\n')
 
-    # ---------------------------
-    # المرحلة 1: استخراج المنتجات والأسعار في حالة النصوص المتعددة
-    # ---------------------------
-    products = []  # (اسم المنتج, سعر_الاونلاين)
+    # استخراج المنتجات والأسعار للنصوص المتعددة
+    products = []
     current_product = None
     multiple_products = False
-    has_price_phrase = False  # هل يوجد سطر "سعر القطعه"؟
+    has_price_phrase = False
 
     for line in lines:
         line_stripped = line.strip()
         if not line_stripped:
             continue
 
-        # إذا كان السطر يحوي "جمله" أو "دسته" نتجاهله تماماً (لن يظهر في الناتج)
         if is_jomla_line(line_stripped):
             continue
 
-        # سطر يحتوي على "سعر القطعه" أو "سعر" مع رقم - نحذفه ونشير أن هناك عبارة سعر
         if is_price_line(line_stripped):
             has_price_phrase = True
             continue
 
-        # سطر يحتوي على "اونلاين" ورقم
         online_price = extract_online_price_from_line(line_stripped)
         if online_price is not None:
             if current_product is not None:
@@ -217,93 +268,67 @@ def build_text(original_text, source_id, msg_date, current_num):
                 multiple_products = True
             continue
 
-        # بخلاف ذلك، السطر قد يكون اسم منتج أو وصف عام
-        # نتجاهل الأسطر التي تحتوي على أرقام فقط أو رموز غير هامة
         if re.search(r'\d', line_stripped) and not re.search(r'[A-Za-z\u0600-\u06FF]', line_stripped):
             continue
         if len(line_stripped) <= 2 and not line_stripped.isalpha():
             continue
 
-        # نعتبر السطر اسم منتج محتمل إذا كان قصيراً نسبياً ولا يحتوي على أرقام
         if not re.search(r'\d', line_stripped) and len(line_stripped) < 40:
             current_product = line_stripped
-        else:
-            # وصف عام - نضيفه إلى مجموعة منفصلة (سيتم الاحتفاظ به)
-            # سنقوم بتجميعه لاحقاً
-            pass
+        # else: description line, will be kept as is
 
-    # إذا وجدنا أكثر من منتج واحد (products يزيد عن 1) نعتبر النص متعدد المنتجات
     is_multiple = len(products) > 1
 
-    # ---------------------------
-    # المرحلة 2: تنظيف النص وحذف الأسطر غير المرغوب فيها (جملة، اونلاين، أسعار قديمة)
-    # ---------------------------
+    # تنظيف النص (حذف الأسطر غير المرغوب فيها)
     cleaned_lines = []
     for line in lines:
         line_stripped = line.strip()
         if not line_stripped:
             continue
-        # حذف أسطر الجمله والدسته
         if is_jomla_line(line_stripped):
             continue
-        # حذف أسطر الأونلاين
         if extract_online_price_from_line(line_stripped) is not None:
             continue
-        # حذف أسطر الأسعار (سعر القطعه، سعر)
         if is_price_line(line_stripped):
             continue
-        # حذف الأسطر التي تحتوي على أرقام فقط
         if re.match(r'^[\d\s]+$', line_stripped):
             continue
         cleaned_lines.append(line_stripped)
 
-    # دمج النص النظيف
     description = "\n".join(cleaned_lines)
 
-    # إضافة تنسيق تلقائي إذا كان الوصف فارغاً
     code_match = re.search(r'([A-Z]+)\s*\d+', normalize_numbers(original_text), re.IGNORECASE)
     original_code_prefix = code_match.group(1).upper() if code_match else ""
     if not description.strip() and original_code_prefix in P_CODE_TRANSLATION:
         item_name = P_CODE_TRANSLATION[original_code_prefix]
         description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
 
-    # ---------------------------
-    # المرحلة 3: بناء الكود
-    # ---------------------------
+    # توليد الكود
     cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
     msg_date_cairo = msg_date.astimezone(cairo_tz)
     today_str = msg_date_cairo.strftime("%d%m")
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     my_code = f"{prefix}{current_num:02d}{today_str}"
 
-    # ---------------------------
-    # المرحلة 4: بناء النص النهائي حسب الحالة
-    # ---------------------------
+    # بناء النص النهائي
     parts = [description]
 
     if is_multiple:
-        # حالة منتجات متعددة
         for prod_name, online_price in products:
             retail_price = RETAIL_MAPPING.get(online_price, online_price)
             price_ar = convert_to_arabic_numbers(retail_price)
             parts.append(f"{prod_name} بسعر : 💰 {price_ar} ج 🔥")
         parts.append(f"الكود : 🔖 {my_code}")
     else:
-        # حالة منتج واحد (أو لم نجد منتجاً متعدداً)
-        # نضيف الكود أولاً
         parts.append(f"الكود : 🔖 {my_code}")
-
-        # نحدد السعر العام
-        # نبحث عن سعر الأونلاين في النص الأصلي (في حالة عدم وجود منتجات متعددة)
+        # استخراج سعر الأونلاين العام
         general_online_price = None
         for line in lines:
             p = extract_online_price_from_line(line)
             if p is not None:
                 general_online_price = p
                 break
-
         if general_online_price is None:
-            # حاول استخراج أي سعر من النص
             general_online_price = extract_real_price(norm_text)
 
         if general_online_price is not None:
@@ -313,16 +338,12 @@ def build_text(original_text, source_id, msg_date, current_num):
                 parts.append(f"سعر القطعه : 💰 {price_ar} ج 🔥")
             else:
                 parts.append(f"السعر : 💰 {price_ar} ج 🔥")
-        else:
-            # إذا لم نجد سعراً، نضيف فقط الكود
-            pass
 
-    # إزالة أي أسطر فارغة
     final_text = "\n".join([p for p in parts if p.strip()])
     return final_text
 
 # ==========================================
-# 3. نظام النشر (بدون تغيير)
+# 3. نظام النشر
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
