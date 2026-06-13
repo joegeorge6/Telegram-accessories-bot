@@ -211,6 +211,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     if is_emoji_only(norm_text):
         return ""
 
+    # تصحيحات إملائية
     norm_text = re.sub(r'(?<![a-zA-Z])(?:infiniyu|infinity)(?![a-zA-Z])', 'فاشونيستا', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'(?:استالس|ستالس|استانليس)', 'استانلس', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\bبلاتيد\b', 'بليتد', norm_text, flags=re.IGNORECASE)
@@ -222,212 +223,109 @@ def build_text(original_text, source_id, msg_date, current_num):
     for word in WORDS_TO_REMOVE:
         norm_text = re.sub(rf'\b{word}\b', '', norm_text, flags=re.IGNORECASE)
 
-    found_price_val = None
-    fallback_prices = []
-    # سنستخدم قائمتين لتخزين أسماء المنتجات وأسعارها بشكل منفصل
-    product_names_list = []     # لتخزين اسم المنتج فقط (مثل "قفل تكه✅")
-    product_prices_list = []    # لتخزين السعر الخاص بكل منتج (مثل "بسعر : 💰 155 ج 🔥")
-    last_product_name = None
-    product_prices = {}         # name -> {"online": price, "direct": price, "jomla": price}
-
-    special_offer_match = re.search(r'عرض\s+خا+ص\s*(\d+)', norm_text, re.IGNORECASE)
-    has_special_offer = False
-    if special_offer_match:
-        found_price_val = int(special_offer_match.group(1))
-        has_special_offer = True
+    # قوائم لتخزين المنتجات وأسعارها
+    products = []          # قائمة (اسم المنتج, سعر_الاونلاين)
+    single_product_price = None   # لمنتج واحد ووجد سعر القطعة
+    single_product_name = None
 
     lines = norm_text.split('\n')
-    new_lines = []
+    current_product = None
+    current_online_price = None
+
+    # المرحلة الأولى: استخراج أسماء المنتجات وأسعار الأونلاين
     for line in lines:
-        if re.search(r'(?:جمله|دسته|دستة|باكت)', line, re.IGNORECASE) and not re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
-            if last_product_name:
-                match = re.search(r'(?:جمله|دسته|دستة)\s*(\d+)', line, re.IGNORECASE)
-                if match:
-                    price = int(match.group(1))
-                    product_prices.setdefault(last_product_name, {})["jomla"] = price
+        line_stripped = line.strip()
+        if not line_stripped:
             continue
 
-        if re.search(r'(?:اونلاين|online)', line, re.IGNORECASE):
-            if not has_special_offer:
-                match_online = re.search(r'(\d+)', line)
-                if match_online:
-                    price = int(match_online.group(1))
-                    found_price_val = price
-                    if last_product_name:
-                        product_prices.setdefault(last_product_name, {})["online"] = price
+        # تجاهل الأسطر التي تحتوي على "جمله" أو "دسته" أو "باكت" أو "علبه" (سيتم حذفها نهائياً)
+        if re.search(r'(?:جمله|جملة|دسته|دستة|باكت|علبه|علبة)', line_stripped, re.IGNORECASE):
             continue
 
-        if re.match(r'^كود\s+\d+', line, re.IGNORECASE):
+        # سطر يحتوي على "اونلاين" ورقم
+        online_match = re.search(r'(?:اونلاين|online)\s*(\d+)', line_stripped, re.IGNORECASE)
+        if online_match and current_product:
+            current_online_price = int(online_match.group(1))
+            products.append((current_product, current_online_price))
+            current_product = None
+            current_online_price = None
             continue
 
-        if not has_special_offer:
-            match = re.search(r'(سعر\s+.+?)\s+(\d{2,4})\b', line, re.IGNORECASE)
-            if match:
-                label_part = match.group(1)
-                price = int(match.group(2))
-                if re.search(r'(?:جملة|جمله|اونلاين|online)', line, re.IGNORECASE):
-                    continue
-                clean_label = re.sub(r'\s*(?:اونلاين|online)\s*', '', label_part, flags=re.IGNORECASE).strip()
-                retail_price = RETAIL_MAPPING.get(price, price)
-                arabic_price = convert_to_arabic_numbers(retail_price)
-                # نضيف اسم المنتج إلى قائمة الأسماء، والسعر إلى قائمة الأسعار
-                product_names_list.append(clean_label)
-                product_prices_list.append(f"بسعر : 💰 {arabic_price} ج 🔥")
-                continue
-
-        direct_match = re.search(r'^(.+?)\s+ب\s+(\d+)\s*(?:ج|جنيه)', line, re.IGNORECASE)
-        if direct_match and not re.search(r'(?:جملة|جمله|اونلاين|online|قطعه|قطعة|السعر|price|عرض)', line, re.IGNORECASE):
-            product_name = direct_match.group(1).strip()
-            price = int(direct_match.group(2))
-            product_prices.setdefault(product_name, {})["direct"] = price
-            last_product_name = product_name
+        # سطر يحتوي على "سعر القطعه" (لمنتج واحد) - نتعامل معه كحالة خاصة
+        single_price_match = re.search(r'(?:سعر القطعه|سعر القطعة|سعر)\s*(\d+)', line_stripped, re.IGNORECASE)
+        if single_price_match and not products:
+            # هذا لمنتج واحد (مثل "انسيال قلوب دورين")
+            single_product_price = int(single_price_match.group(1))
             continue
 
-        if not re.search(r'\d', line) and line.strip():
-            if not re.search(r'[A-Za-z]', line):
-                words = line.strip().split()
-                max_words = 3 if '✅' in line else 2
-                if len(words) <= max_words and all(len(w) <= 15 for w in words):
-                    last_product_name = line.strip()
-        new_lines.append(line)
+        # إذا كان السطر لا يحتوي على أرقام ولا على كلمات حظر، نعتبره اسم منتج محتمل
+        if not re.search(r'\d', line_stripped) and not re.search(r'(?:جمله|جملة|دسته|اونلاين|online|سعر)', line_stripped, re.IGNORECASE):
+            # نتأكد أنه ليس مجرد رموز
+            if len(line_stripped) > 1:
+                current_product = line_stripped
 
-    norm_text = "\n".join(new_lines)
+    # إذا لم نجد أي منتج بالطريقة السابقة، نبحث عن سعر عام
+    if not products and single_product_price is None:
+        general_price = extract_real_price(norm_text)
+        if general_price:
+            single_product_price = general_price
 
-    if found_price_val is None:
-        found_price_val = extract_real_price(norm_text)
-
-    # معالجة product_prices (التي تم جمعها من direct_match وغيره)
-    for name, prices in product_prices.items():
-        final_price = None
-        if "online" in prices:
-            final_price = prices["online"]
-        elif "direct" in prices:
-            final_price = prices["direct"]
-        elif "jomla" in prices:
-            final_price = prices["jomla"]
-        if final_price:
-            retail_price = RETAIL_MAPPING.get(final_price, final_price)
-            arabic_price = convert_to_arabic_numbers(retail_price)
-            product_names_list.append(name)
-            product_prices_list.append(f"بسعر : 💰 {arabic_price} ج 🔥")
-            # إزالة أسماء المنتجات من النص الأصلي لتجنب تكرارها
-            norm_text = re.sub(re.escape(name), '', norm_text)
-
+    # بناء النص النظيف (بدون أسطر الأسعار القديمة)
     cleaned_lines = []
-    size_mode = False
-    for line in norm_text.split('\n'):
-        line = line.strip()
-        if not line: continue
-
-        if re.match(r'^[A-Z]+-\d+$', line):
+    for line in lines:
+        line_stripped = line.strip()
+        if not line_stripped:
             continue
-
-        if size_mode:
-            if re.match(r'^\d+\s*$', line) or re.match(r'^\d+\s*[^a-zA-Z\u0600-\u06FF]+$', line):
-                cleaned_lines.append(line)
-                continue
-            else:
-                size_mode = False
-
-        if re.search(r'مقاس', line, re.IGNORECASE):
-            size_mode = True
-            cleaned_lines.append(line)
+        # حذف الأسطر التي تحتوي على كلمات الأسعار (جمله، اونلاين، سعر القطعه، سعر الدسته)
+        if re.search(r'(?:جمله|جملة|دسته|دستة|باكت|علبه|علبة|اونلاين|online|سعر القطعه|سعر القطعة|سعر الدسته|سعر)', line_stripped, re.IGNORECASE):
             continue
-
-        if re.match(r'^[A-Z]+\s*\d+', line, re.IGNORECASE):
-            p = extract_real_price(line)
-            if p is None:
-                continue
-            if found_price_val is None:
-                found_price_val = p
+        # حذف الأسطر التي تتكون من أرقام فقط أو أرقام ورموز
+        if re.match(r'^[\d\s\u200c\u200d]+$', line_stripped):
             continue
-
-        if re.search(r'(?:الكارت|كارت).*ب\s*\d+\s*ج', line, re.IGNORECASE): continue
-        if any(re.search(p, line, re.IGNORECASE) for p in [r'.*(?:جمله|جملة|دسته|دستة|علبه|علبة|اختيار|باكت).*']): continue
-        if re.search(r'(?:أونلاين|اونلاين|online|price)', line, re.IGNORECASE): continue
-        if re.search(r'بكام', line, re.IGNORECASE): continue
-
-        if re.search(r'\bL\s*\.?\s*E\b', line, re.IGNORECASE) or re.search(r'\bLe\b', line):
-            continue
-
-        if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'سعر', line, re.IGNORECASE):
-            if re.search(r'عرض\s+\d+\s*(?:mm|cm|مم|سم|متر|ملي|inch|بوصة)', line, re.IGNORECASE):
-                pass
-            else:
-                line = re.sub(r'^.*?عرض\s*\S*\s*', '', line, flags=re.IGNORECASE).strip()
-                if not line:
-                    continue
-
-        if re.search(r'(?:للحجز|طلب الاوردر|للطلب)', line, re.IGNORECASE):
-            continue
-
-        if re.search(r'\b01\d{9}\b', line):
-            continue
-
-        if not found_price_val:
-            fallback_match = re.search(r'\bب\s*(\d+)\s*(?:ج|جنيه)', line)
-            if fallback_match:
-                fallback_prices.append(int(fallback_match.group(1)))
-
-        if re.match(r'^(\d{2,4})\s+', line):
-            num = int(re.match(r'^(\d{2,4})', line).group(1))
-            if 15 <= num <= 2000:
-                line = re.sub(r'^\d+\s+', '', line).strip()
-
-        line = re.sub(r'(?:السعر|سعر|price|بسعر|قطعه|قطعة|أونلاين|online|اقل من).*', '', line, flags=re.IGNORECASE).strip()
-        line = re.sub(r'\s*ب\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
-        line = re.sub(r'[:：]?\s*\d+\s*(?:ج|LE|L\.E|egp|جنيه).*', '', line, flags=re.IGNORECASE).strip()
-
-        if is_number_emoji_line(line):
-            continue
-
-        if line and len(line.split()) == 1:
-            if re.match(r'^[\u0600-\u06FF]+$', line):
-                pass
-            elif not any(c.isascii() and c.isalpha() for c in line):
-                continue
-
-        if len(line) <= 3 and not any(c.isascii() and c.isalpha() for c in line):
-            continue
-
-        if line: cleaned_lines.append(line)
-
-    if found_price_val is None and fallback_prices:
-        found_price_val = fallback_prices[-1]
+        cleaned_lines.append(line_stripped)
 
     description = "\n".join(cleaned_lines)
-    
+
+    # إضافة تنسيق هيكلي إذا كان الوصف فارغاً
     code_match = re.search(r'([A-Z]+)\s*\d+', normalize_numbers(original_text), re.IGNORECASE)
     original_code_prefix = code_match.group(1).upper() if code_match else ""
-
     if not description.strip() and original_code_prefix in P_CODE_TRANSLATION:
         item_name = P_CODE_TRANSLATION[original_code_prefix]
         description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
 
+    # حساب الكود
     cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
     msg_date_cairo = msg_date.astimezone(cairo_tz)
     today_str = msg_date_cairo.strftime("%d%m")
-    
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     my_code = f"{prefix}{current_num:02d}{today_str}"
 
-    # بناء النص النهائي بالترتيب المطلوب
+    # بناء النص النهائي
     parts = [description]
-    
-    # إضافة أسماء المنتجات (بدون أسعار)
-    parts.extend(product_names_list)
-    
-    # إضافة الكود
-    parts.append(f"الكود : 🔖 {my_code}")
-    
-    # إضافة الأسعار
-    parts.extend(product_prices_list)
-    
-    # إذا لم توجد منتجات مسماة، نعرض السعر العام (للمنتجات التي ليس لها اسم محدد)
-    if not product_prices_list and found_price_val is not None:
-        final_price_val = RETAIL_MAPPING.get(found_price_val, "")
-        price_str_ar = convert_to_arabic_numbers(final_price_val)
-        parts.append(f"السعر : 💰 {price_str_ar} ج 🔥")
+
+    if products:
+        # حالة منتجات متعددة
+        for prod_name, online_price in products:
+            retail_price = RETAIL_MAPPING.get(online_price, online_price)
+            price_ar = convert_to_arabic_numbers(retail_price)
+            parts.append(f"{prod_name} بسعر : 💰 {price_ar} ج 🔥")
+        parts.append(f"الكود : 🔖 {my_code}")
+    elif single_product_price is not None:
+        # حالة منتج واحد مع سعر القطعة
+        retail_price = RETAIL_MAPPING.get(single_product_price, single_product_price)
+        price_ar = convert_to_arabic_numbers(retail_price)
+        parts.append(f"الكود : 🔖 {my_code}")
+        parts.append(f"سعر القطعه : 💰 {price_ar} ج 🔥")
+    else:
+        # حالة عامة (بدون أسعار مستخرجة)
+        general_price = extract_real_price(norm_text)
+        if general_price:
+            retail_price = RETAIL_MAPPING.get(general_price, general_price)
+            price_ar = convert_to_arabic_numbers(retail_price)
+            parts.append(f"الكود : 🔖 {my_code}")
+            parts.append(f"السعر : 💰 {price_ar} ج 🔥")
+        else:
+            parts.append(f"الكود : 🔖 {my_code}")
 
     return "\n".join(parts)
 
@@ -561,12 +459,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.73 Ready!"
+    return "Retail Pro Bot v2.3.74 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.73 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.74 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
