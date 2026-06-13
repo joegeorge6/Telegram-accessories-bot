@@ -44,7 +44,6 @@ BLOCK_KEYWORDS = [
     "تم غلق الحجز والمحل اليوم وغداً  👈👈الاحد 👉👉الاجازه الاسبوعيه اترك رسالتك بالحجز وسوف نقوم بالرد عليك يوم الاثنين ان شاء الله \nبرجاء عدم الازعاج لا يتم الرد على اى استفسارات او حجوزات او مكالمات خلال الاجازه وشكرا",
     "اى عميل استلم الاوردر بتاعه قبل العيد \nولسه مكتبش تم الاستلام \nيبعت حالا تم الاستلام \nلو استلمت ومكتبتش تم الاستلام مش هنفتح ليك حجز تانى",
     "Aysel Store ✨♥️\nلينكات قنوات التليجرام 👇\n1-لينك قناة التوك https://t.me/ayselstore258\n2- لينك قناة الاكسسوار https://t.me/ayselstore55\n\n4- لينك قناة الشرابات https://t.me/+SzAH0Jb0JrnOjO32\n5- لينك قناة المنزلى https://t.me/ayselstore4\n6 -  لينك قناة الميكب https://t.me/ayselmakeup98\nلينك جروب التليجرام https://t.me/ayselstore98\n\n-  العنوان 6 ابراهيم مصطفى متفرع من المدينه المنوره النزهه الجديده القاهره \n! اللوكيشن \nhttps://maps.google.com/?q=30.127422,31.376827",
-    # النص الجديد المطلوب منعه:
     "مدة الحجز من اسبوع ل 10 ايام اللى عدا مدة الحجز يتابع على جروب حجزه تجنباً لفك الحجز ♥️♥️"
 ]
 
@@ -225,9 +224,11 @@ def build_text(original_text, source_id, msg_date, current_num):
 
     found_price_val = None
     fallback_prices = []
-    labeled_prices = []
+    # سنستخدم قائمتين لتخزين أسماء المنتجات وأسعارها بشكل منفصل
+    product_names_list = []     # لتخزين اسم المنتج فقط (مثل "قفل تكه✅")
+    product_prices_list = []    # لتخزين السعر الخاص بكل منتج (مثل "بسعر : 💰 155 ج 🔥")
     last_product_name = None
-    product_prices = {}
+    product_prices = {}         # name -> {"online": price, "direct": price, "jomla": price}
 
     special_offer_match = re.search(r'عرض\s+خا+ص\s*(\d+)', norm_text, re.IGNORECASE)
     has_special_offer = False
@@ -260,7 +261,6 @@ def build_text(original_text, source_id, msg_date, current_num):
             continue
 
         if not has_special_offer:
-            # ✅ تم تعديل النمط ليتجاهل الأرقام الصغيرة (أقل من 10) ويأخذ السعر الحقيقي
             match = re.search(r'(سعر\s+.+?)\s+(\d{2,4})\b', line, re.IGNORECASE)
             if match:
                 label_part = match.group(1)
@@ -270,7 +270,9 @@ def build_text(original_text, source_id, msg_date, current_num):
                 clean_label = re.sub(r'\s*(?:اونلاين|online)\s*', '', label_part, flags=re.IGNORECASE).strip()
                 retail_price = RETAIL_MAPPING.get(price, price)
                 arabic_price = convert_to_arabic_numbers(retail_price)
-                labeled_prices.append(f"{clean_label}: 💰 {arabic_price} ج 🔥")
+                # نضيف اسم المنتج إلى قائمة الأسماء، والسعر إلى قائمة الأسعار
+                product_names_list.append(clean_label)
+                product_prices_list.append(f"بسعر : 💰 {arabic_price} ج 🔥")
                 continue
 
         direct_match = re.search(r'^(.+?)\s+ب\s+(\d+)\s*(?:ج|جنيه)', line, re.IGNORECASE)
@@ -294,7 +296,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     if found_price_val is None:
         found_price_val = extract_real_price(norm_text)
 
-    new_labeled = []
+    # معالجة product_prices (التي تم جمعها من direct_match وغيره)
     for name, prices in product_prices.items():
         final_price = None
         if "online" in prices:
@@ -306,18 +308,10 @@ def build_text(original_text, source_id, msg_date, current_num):
         if final_price:
             retail_price = RETAIL_MAPPING.get(final_price, final_price)
             arabic_price = convert_to_arabic_numbers(retail_price)
-            new_labeled.append(f"{name} بسعر : 💰 {arabic_price} ج 🔥")
-
-    if len(product_prices) == 1:
-        labeled_prices.extend(new_labeled)
-        only_name = list(product_prices.keys())[0]
-        norm_text = re.sub(re.escape(only_name), '', norm_text)
-        found_price_val = None
-    elif len(product_prices) > 1:
-        for name in product_prices.keys():
+            product_names_list.append(name)
+            product_prices_list.append(f"بسعر : 💰 {arabic_price} ج 🔥")
+            # إزالة أسماء المنتجات من النص الأصلي لتجنب تكرارها
             norm_text = re.sub(re.escape(name), '', norm_text)
-        labeled_prices.extend(new_labeled)
-        found_price_val = None
 
     cleaned_lines = []
     size_mode = False
@@ -417,15 +411,22 @@ def build_text(original_text, source_id, msg_date, current_num):
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     my_code = f"{prefix}{current_num:02d}{today_str}"
 
+    # بناء النص النهائي بالترتيب المطلوب
     parts = [description]
     
-    if labeled_prices:
-        parts.append(f"الكود : 🔖 {my_code}")
-        parts.extend(labeled_prices)
-    elif found_price_val is not None:
+    # إضافة أسماء المنتجات (بدون أسعار)
+    parts.extend(product_names_list)
+    
+    # إضافة الكود
+    parts.append(f"الكود : 🔖 {my_code}")
+    
+    # إضافة الأسعار
+    parts.extend(product_prices_list)
+    
+    # إذا لم توجد منتجات مسماة، نعرض السعر العام (للمنتجات التي ليس لها اسم محدد)
+    if not product_prices_list and found_price_val is not None:
         final_price_val = RETAIL_MAPPING.get(found_price_val, "")
         price_str_ar = convert_to_arabic_numbers(final_price_val)
-        parts.append(f"الكود : 🔖 {my_code}")
         parts.append(f"السعر : 💰 {price_str_ar} ج 🔥")
 
     return "\n".join(parts)
@@ -560,12 +561,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.72 Ready!"
+    return "Retail Pro Bot v2.3.73 Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.72 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.73 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
