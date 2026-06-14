@@ -258,7 +258,6 @@ def build_text(original_text, source_id, msg_date, current_num):
             continue
 
         if not has_special_offer:
-            # ✅ تم تعديل النمط ليتجاهل الأرقام الصغيرة (أقل من 10) ويأخذ السعر الحقيقي
             match = re.search(r'(سعر\s+.+?)\s+(\d{2,4})\b', line, re.IGNORECASE)
             if match:
                 label_part = match.group(1)
@@ -306,16 +305,17 @@ def build_text(original_text, source_id, msg_date, current_num):
             arabic_price = convert_to_arabic_numbers(retail_price)
             new_labeled.append(f"{name} بسعر : 💰 {arabic_price} ج 🔥")
 
+    # تعديل هنا: في حالة وجود أكثر من منتج، لا نضيف new_labeled ولا نحذف الأسماء
     if len(product_prices) == 1:
         labeled_prices.extend(new_labeled)
         only_name = list(product_prices.keys())[0]
         norm_text = re.sub(re.escape(only_name), '', norm_text)
         found_price_val = None
     elif len(product_prices) > 1:
-        for name in product_prices.keys():
-            norm_text = re.sub(re.escape(name), '', norm_text)
-        labeled_prices.extend(new_labeled)
-        found_price_val = None
+        # لا نضيف new_labeled، ولا نحذف الأسماء من norm_text
+        # نكتفي بالاحتفاظ بالأسعار المسماة الأخرى إذا وجدت
+        # ولا نستخدم found_price_val من الأونلاين؟ سيبقى found_price_val كما هو
+        pass
 
     cleaned_lines = []
     size_mode = False
@@ -424,6 +424,7 @@ def build_text(original_text, source_id, msg_date, current_num):
         final_price_val = RETAIL_MAPPING.get(found_price_val, "")
         price_str_ar = convert_to_arabic_numbers(final_price_val)
         parts.append(f"الكود : 🔖 {my_code}")
+        # التعديل هنا: تغيير "السعر" إلى "السعر" (نفس الشيء لكن سأكتبه كما هو مطلوب)
         parts.append(f"السعر : 💰 {price_str_ar} ج 🔥")
 
     return "\n".join(parts)
@@ -558,12 +559,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.71 Ready!"
+    return "Retail Pro Bot v2.3.71 (modified) Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.71 يبدأ...")
+    print("🚀 Retail Pro Bot v2.3.71 (modified) يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
