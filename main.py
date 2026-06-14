@@ -194,7 +194,10 @@ def is_number_emoji_line(line):
         return True
     return False
 
-def build_text(original_text, source_id, msg_date, current_num):
+# ==========================================
+# 3. المعالجة الأساسية للنص (النسخة الأصلية)
+# ==========================================
+def build_text_original(original_text, source_id, msg_date, current_num):
     if not original_text: return ""
     
     if re.search(r'HEMA\s*STORE', original_text, re.IGNORECASE):
@@ -305,16 +308,13 @@ def build_text(original_text, source_id, msg_date, current_num):
             arabic_price = convert_to_arabic_numbers(retail_price)
             new_labeled.append(f"{name} بسعر : 💰 {arabic_price} ج 🔥")
 
-    # تعديل هنا: في حالة وجود أكثر من منتج، لا نضيف new_labeled ولا نحذف الأسماء
+    # تعديل: في حالة وجود أكثر من منتج، لا نضيف new_labeled ولا نحذف الأسماء
     if len(product_prices) == 1:
         labeled_prices.extend(new_labeled)
         only_name = list(product_prices.keys())[0]
         norm_text = re.sub(re.escape(only_name), '', norm_text)
         found_price_val = None
     elif len(product_prices) > 1:
-        # لا نضيف new_labeled، ولا نحذف الأسماء من norm_text
-        # نكتفي بالاحتفاظ بالأسعار المسماة الأخرى إذا وجدت
-        # ولا نستخدم found_price_val من الأونلاين؟ سيبقى found_price_val كما هو
         pass
 
     cleaned_lines = []
@@ -424,13 +424,126 @@ def build_text(original_text, source_id, msg_date, current_num):
         final_price_val = RETAIL_MAPPING.get(found_price_val, "")
         price_str_ar = convert_to_arabic_numbers(final_price_val)
         parts.append(f"الكود : 🔖 {my_code}")
-        # التعديل هنا: تغيير "السعر" إلى "السعر" (نفس الشيء لكن سأكتبه كما هو مطلوب)
         parts.append(f"السعر : 💰 {price_str_ar} ج 🔥")
 
     return "\n".join(parts)
 
 # ==========================================
-# 3. نظام النشر (بدون تغيير)
+# 4. معالجات مخصصة حسب المصدر (Custom Processors)
+# ==========================================
+
+def default_processor(text, msg_date, current_num, source_id):
+    """المعالج الافتراضي - يستخدم نفس منطق build_text_original"""
+    return build_text_original(text, source_id, msg_date, current_num)
+
+def extract_price_from_line(line):
+    """مساعد: استخراج أول رقم من سطر يحتوي على جمله أو اونلاين"""
+    match = re.search(r'(\d+)', line)
+    return int(match.group(1)) if match else None
+
+def sasa_processor(text, msg_date, current_num, source_id):
+    """
+    معالج خاص لمكتب sasaaccessories
+    يدعم حالتين:
+    1 - منتج واحد: وصف + جمله + اونلاين → يخرج الوصف كاملاً (بدون جمله/اونلاين) ثم الكود ثم السعر في سطر منفصل (بدون سطر فارغ).
+    2 - طقم به عدة قطع: السطر الأول عنوان الطقم، ثم أزواج (اسم قطعة، جمله، اونلاين) → يخرج عنوان الطقم، ثم الكود، ثم كل قطعة مع سعرها.
+    """
+    if not text:
+        return ""
+
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    if len(lines) < 3:
+        return default_processor(text, msg_date, current_num, source_id)
+
+    # محاولة اكتشاف نمط الطقم (عدة قطع)
+    pattern = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if not re.search(r'(جمله|اونلاين)', line, re.IGNORECASE):
+            if i+2 < len(lines) and re.search(r'جمله\s*\d+', lines[i+1], re.IGNORECASE) and re.search(r'اونلاين\s*\d+', lines[i+2], re.IGNORECASE):
+                item_name = line
+                online_price = extract_price_from_line(lines[i+2])
+                if online_price is not None:
+                    pattern.append(('item', item_name, online_price))
+                else:
+                    pattern.append(('item', item_name, None))
+                i += 3
+                continue
+            else:
+                pattern.append(('bundle_title', line))
+                i += 1
+        else:
+            i += 1
+
+    bundle_title = None
+    items = []
+    for p in pattern:
+        if p[0] == 'bundle_title':
+            bundle_title = p[1]
+        elif p[0] == 'item':
+            items.append((p[1], p[2]))
+
+    # توليد الكود (يتم استخدامه في كل الحالات)
+    cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
+    msg_date_cairo = msg_date.astimezone(cairo_tz)
+    today_str = msg_date_cairo.strftime("%d%m")
+    prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
+    my_code = f"{prefix}{current_num:02d}{today_str}"
+
+    # حالة الطقم (أكثر من قطعة)
+    if len(items) > 1 and bundle_title is not None:
+        result_lines = [bundle_title, f"الكود : 🔖 {my_code}"]
+        for item_name, online_price in items:
+            if online_price is not None:
+                retail_price = RETAIL_MAPPING.get(online_price, online_price)
+                price_ar = convert_to_arabic_numbers(retail_price)
+                result_lines.append(f"{item_name} بسعر : 💰 {price_ar} ج 🔥")
+            else:
+                result_lines.append(f"{item_name} (سعر غير متوفر)")
+        return "\n".join(result_lines)
+
+    # حالة المنتج الفردي (قطعة واحدة)
+    if len(items) == 1:
+        # نحذف الأسطر التي تحتوي على جمله/اونلاين
+        clean_lines = []
+        for line in lines:
+            if re.search(r'جمله|اونلاين', line, re.IGNORECASE):
+                continue
+            clean_lines.append(line)
+        description = "\n".join(clean_lines).strip()
+        online_price = items[0][1]
+        if online_price is None:
+            return default_processor(text, msg_date, current_num, source_id)
+        retail_price = RETAIL_MAPPING.get(online_price, online_price)
+        price_ar = convert_to_arabic_numbers(retail_price)
+        # بدون سطر فارغ بين الوصف والكود، مع الحفاظ على مسافة قبل السعر
+        return f"{description}\nالكود : 🔖 {my_code}\n السعر : 💰 {price_ar} ج 🔥"
+
+    # إذا لم نتعرف على أي نمط، نلجأ للمعالج الافتراضي
+    return default_processor(text, msg_date, current_num, source_id)
+
+# ربط كل مصدر بالمعالج الخاص به
+PROCESSOR_MAP = {
+    "sasaaccessories": sasa_processor,
+}
+
+def get_processor(source_id):
+    """إرجاع المعالج المناسب للمصدر"""
+    if isinstance(source_id, str) and source_id in PROCESSOR_MAP:
+        return PROCESSOR_MAP[source_id]
+    if isinstance(source_id, int) and str(source_id) in PROCESSOR_MAP:
+        return PROCESSOR_MAP[str(source_id)]
+    if source_id in PROCESSOR_MAP:
+        return PROCESSOR_MAP[source_id]
+    return default_processor
+
+def build_text(original_text, source_id, msg_date, current_num):
+    processor = get_processor(source_id)
+    return processor(original_text, msg_date, current_num, source_id)
+
+# ==========================================
+# 5. نظام النشر (بدون تغيير)
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or is_msg_processed(messages[0].id, source_id):
@@ -524,7 +637,7 @@ async def fetch_history(client):
     print("✅ History finished.")
 
 # ==========================================
-# 4. تشغيل البوت
+# 6. تشغيل البوت
 # ==========================================
 app = Client("retail_bot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
 
@@ -559,12 +672,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v2.3.71 (modified) Ready!"
+    return "Retail Pro Bot v3.1.1 (Sasa custom processor - fixed single item format) Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v2.3.71 (modified) يبدأ...")
+    print("🚀 Retail Pro Bot v3.1.1 (modified) يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
