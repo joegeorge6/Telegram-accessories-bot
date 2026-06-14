@@ -522,8 +522,9 @@ def aysel_processor(text, msg_date, current_num, source_id):
     يدعم:
     1 - خيارات متعددة (سعر السلفر، سعر الجولد)
     2 - سعر قطعة واحد (يقبل 'سعر القطعة' أو 'سعر القطعه')
-    3 - أولوية لـ 'عرض خاص' إن وجد
-    4 - يتجاهل الأكواد مثل B-016 (نمط حروف-أرقام)
+    3 - سعر الدسته (يقسم على 6 للحصول على سعر القطعة)
+    4 - أولوية لـ 'عرض خاص' (إن وجد يلغى ما عداه)
+    5 - يتجاهل الأكواد مثل B-016
     """
     if not text:
         return ""
@@ -536,11 +537,12 @@ def aysel_processor(text, msg_date, current_num, source_id):
     silver_price = None
     gold_price = None
     piece_price = None
+    dozen_price = None   # سعر الدسته (دزينة)
     special_price = None
 
     for line in lines:
         line_lower = line.lower()
-        # تجاهل الأكواد مثل B-016 (حروف ثم شرطة ثم أرقام)
+        # تجاهل الأكواد مثل B-016
         if re.match(r'^[A-Za-z]+-\d+$', line):
             continue
 
@@ -558,6 +560,11 @@ def aysel_processor(text, msg_date, current_num, source_id):
             match = re.search(r'(\d+)', line)
             if match:
                 piece_price = int(match.group(1))
+            continue
+        elif 'سعر الدسته' in line_lower or 'سعر الدستة' in line_lower:
+            match = re.search(r'(\d+)', line)
+            if match:
+                dozen_price = int(match.group(1))
             continue
         elif 'عرض خاص' in line_lower:
             match = re.search(r'(\d+)', line)
@@ -587,10 +594,13 @@ def aysel_processor(text, msg_date, current_num, source_id):
             result_lines.append(f"سعر الجولد: 💰 {price_ar_gold} ج 🔥")
         return "\n".join(result_lines)
 
-    # حالة السعر الواحد (بأولوية للعرض الخاص)
+    # تحديد السعر النهائي (الأولوية: عرض خاص > سعر الدسته > سعر القطعة)
     final_price = None
     if special_price is not None:
         final_price = special_price
+    elif dozen_price is not None:
+        # سعر الدسته يُقسم على 6 (افتراضياً) للحصول على سعر القطعة
+        final_price = dozen_price // 6
     elif piece_price is not None:
         final_price = piece_price
     else:
@@ -759,12 +769,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.2.2 (Aysel: ignore codes like B-016, support قطعه) Ready!"
+    return "Retail Pro Bot v3.2.3 (Aysel: dozen support, clean codes) Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.2.2 (modified) يبدأ...")
+    print("🚀 Retail Pro Bot v3.2.3 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
