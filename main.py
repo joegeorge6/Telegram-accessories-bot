@@ -520,11 +520,11 @@ def aysel_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص لمكتب ayselstore55
     يدعم:
-    1 - خيارات متعددة (سعر السلفر، سعر الجولد)
-    2 - سعر قطعة واحد (يقبل 'سعر القطعة' أو 'سعر القطعه')
-    3 - سعر الدسته (يقسم على 6 للحصول على سعر القطعة)
-    4 - أولوية لـ 'عرض خاص' (إن وجد يلغى ما عداه)
-    5 - يتجاهل الأكواد مثل B-016
+    1 - خيارات متعددة (سعر السلفر، سعر الجولد، سعر الانسيال، سعر السلسله/السلسلة)
+    2 - سعر قطعة واحد (سعر القطعة/القطعه)
+    3 - سعر الدسته (يقسم على 6)
+    4 - أولوية لـ 'عرض خاص'
+    5 - يتجاهل الأكواد مثل B-016 والأسطر التي تحتوي على 'خلص' أو ❌
     """
     if not text:
         return ""
@@ -534,10 +534,20 @@ def aysel_processor(text, msg_date, current_num, source_id):
         return default_processor(text, msg_date, current_num, source_id)
 
     description_lines = []
-    silver_price = None
-    gold_price = None
+    # قاموس لتخزين الأسعار المتعددة: المفتاح هو النص الذي سيظهر (مثل "سعر الانسيال")، والقيمة هي السعر
+    multi_prices = {}
+
+    # قائمة الكلمات المفتاحية للخيارات المتعددة
+    multi_keywords = {
+        'سعر السلفر': 'سعر السلفر',
+        'سعر الجولد': 'سعر الجولد',
+        'سعر الانسيال': 'سعر الانسيال',
+        'سعر السلسله': 'سعر السلسله',
+        'سعر السلسلة': 'سعر السلسلة'
+    }
+
     piece_price = None
-    dozen_price = None   # سعر الدسته (دزينة)
+    dozen_price = None
     special_price = None
 
     for line in lines:
@@ -545,18 +555,22 @@ def aysel_processor(text, msg_date, current_num, source_id):
         # تجاهل الأكواد مثل B-016
         if re.match(r'^[A-Za-z]+-\d+$', line):
             continue
+        # تجاهل الأسطر التي تحتوي على 'خلص' أو ❌
+        if 'خلص' in line or '❌' in line:
+            continue
 
-        if 'سعر السلفر' in line_lower:
-            match = re.search(r'(\d+)', line)
-            if match:
-                silver_price = int(match.group(1))
+        matched = False
+        for keyword, label in multi_keywords.items():
+            if keyword in line_lower:
+                match = re.search(r'(\d+)', line)
+                if match:
+                    multi_prices[label] = int(match.group(1))
+                matched = True
+                break
+        if matched:
             continue
-        elif 'سعر الجولد' in line_lower:
-            match = re.search(r'(\d+)', line)
-            if match:
-                gold_price = int(match.group(1))
-            continue
-        elif 'سعر القطعة' in line_lower or 'سعر القطعه' in line_lower:
+
+        if 'سعر القطعة' in line_lower or 'سعر القطعه' in line_lower:
             match = re.search(r'(\d+)', line)
             if match:
                 piece_price = int(match.group(1))
@@ -574,8 +588,8 @@ def aysel_processor(text, msg_date, current_num, source_id):
         else:
             description_lines.append(line)
 
-    # حالة الخيارات المتعددة (سلفر/جولد)
-    if silver_price is not None or gold_price is not None:
+    # إذا وجدنا أي من الخيارات المتعددة (سلفر/جولد/انسيال/سلسله)
+    if multi_prices:
         cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
         msg_date_cairo = msg_date.astimezone(cairo_tz)
         today_str = msg_date_cairo.strftime("%d%m")
@@ -584,14 +598,13 @@ def aysel_processor(text, msg_date, current_num, source_id):
 
         description = "\n".join(description_lines).strip()
         result_lines = [description, f"الكود : 🔖 {my_code}"]
-        if silver_price is not None:
-            retail_silver = RETAIL_MAPPING.get(silver_price, silver_price)
-            price_ar_silver = convert_to_arabic_numbers(retail_silver)
-            result_lines.append(f"سعر السلفر: 💰 {price_ar_silver} ج 🔥")
-        if gold_price is not None:
-            retail_gold = RETAIL_MAPPING.get(gold_price, gold_price)
-            price_ar_gold = convert_to_arabic_numbers(retail_gold)
-            result_lines.append(f"سعر الجولد: 💰 {price_ar_gold} ج 🔥")
+        # ترتيب ثابت أو حسب الظهور
+        for label in ['سعر الانسيال', 'سعر السلسله', 'سعر السلسلة', 'سعر السلفر', 'سعر الجولد']:
+            if label in multi_prices:
+                price = multi_prices[label]
+                retail = RETAIL_MAPPING.get(price, price)
+                price_ar = convert_to_arabic_numbers(retail)
+                result_lines.append(f"{label}: 💰 {price_ar} ج 🔥")
         return "\n".join(result_lines)
 
     # تحديد السعر النهائي (الأولوية: عرض خاص > سعر الدسته > سعر القطعة)
@@ -599,7 +612,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
     if special_price is not None:
         final_price = special_price
     elif dozen_price is not None:
-        # سعر الدسته يُقسم على 6 (افتراضياً) للحصول على سعر القطعة
         final_price = dozen_price // 6
     elif piece_price is not None:
         final_price = piece_price
@@ -769,12 +781,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.2.3 (Aysel: dozen support, clean codes) Ready!"
+    return "Retail Pro Bot v3.2.4 (Aysel: added انسيال and سلسله support) Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.2.3 يبدأ...")
+    print("🚀 Retail Pro Bot v3.2.4 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
