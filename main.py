@@ -519,6 +519,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
     - خيارات متعددة (سعر السلفر، سعر الجولد، سعر الانسيال، سعر السلسله)
     - سعر قطعة واحد (سعر القطعة، عرض خاص، سعر الدسته)
     - منتجات متعددة في سطور، كل سطر يحتوي على رقم (حتى لو كان متبوعًا برموز تعبيرية)
+    - دعم للأسطر التي تحتوي على ترقيم وأسعار (مثل "1 : 100")، بحيث يستخرج الرقم الأخير كسعر
     """
     if not text:
         return ""
@@ -580,12 +581,12 @@ def aysel_processor(text, msg_date, current_num, source_id):
                 special_price = int(match.group(1))
             continue
         else:
-            # هذا السطر ليس من الأنواع السابقة. نحاول استخراج رقم (حتى لو كان متبوعًا برموز)
-            match_price = re.search(r'(\d+)', line)
-            if match_price:
-                price = int(match_price.group(1))
-                # إزالة الرقم من السطر مع الحفاظ على بقية النص والرموز التعبيرية
-                clean_line = re.sub(r'\s*\d+\s*', '', line).strip()
+            # هذا السطر ليس من الأنواع السابقة. نحاول استخراج الرقم الأخير فقط (لتجنب مشكلة الترقيم)
+            numbers = re.findall(r'\d+', line)
+            if numbers:
+                price = int(numbers[-1])  # الرقم الأخير هو السعر
+                # نحذف الرقم الأخير فقط من النص (نحذف الأرقام في نهاية السطر)
+                clean_line = re.sub(r'\s*\d+\s*$', '', line).strip()
                 other_items.append((clean_line, price))
             else:
                 description_lines.append(line)
@@ -809,12 +810,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.2.7 (Aysel: flexible price extraction for lines) Ready!"
+    return "Retail Pro Bot v3.2.8 (Aysel: last number extraction, supports numbered lists) Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.2.7 يبدأ...")
+    print("🚀 Retail Pro Bot v3.2.8 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
