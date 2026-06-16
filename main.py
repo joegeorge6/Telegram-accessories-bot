@@ -518,7 +518,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
     يدعم عدة أنماط:
     - خيارات متعددة (سعر السلفر، سعر الجولد، سعر الانسيال، سعر السلسله)
     - سعر قطعة واحد (سعر القطعة، عرض خاص، سعر الدسته)
-    - منتجات متعددة في سطور، كل سطر ينتهي برقم (السعر) دون كلمات مفتاحية
+    - منتجات متعددة في سطور، كل سطر يحتوي على رقم (حتى لو كان متبوعًا برموز تعبيرية)
     """
     if not text:
         return ""
@@ -580,12 +580,12 @@ def aysel_processor(text, msg_date, current_num, source_id):
                 special_price = int(match.group(1))
             continue
         else:
-            # هذا السطر ليس من الأنواع السابقة. نحاول استخراج رقم في نهاية السطر
-            match_price = re.search(r'(\d+)\s*$', line)
+            # هذا السطر ليس من الأنواع السابقة. نحاول استخراج رقم (حتى لو كان متبوعًا برموز)
+            match_price = re.search(r'(\d+)', line)
             if match_price:
                 price = int(match_price.group(1))
-                # إزالة الرقم من نهاية السطر
-                clean_line = re.sub(r'\s*\d+\s*$', '', line).strip()
+                # إزالة الرقم من السطر مع الحفاظ على بقية النص والرموز التعبيرية
+                clean_line = re.sub(r'\s*\d+\s*', '', line).strip()
                 other_items.append((clean_line, price))
             else:
                 description_lines.append(line)
@@ -616,7 +616,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
         prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
         my_code = f"{prefix}{current_num:02d}{today_str}"
 
-        # نأخذ أول سطر وصف (العنوان) من description_lines إن وجد
         title = "\n".join(description_lines).strip() if description_lines else ""
         result_lines = []
         if title:
@@ -810,12 +809,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.2.6 (Aysel: multi products with prices at line end) Ready!"
+    return "Retail Pro Bot v3.2.7 (Aysel: flexible price extraction for lines) Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.2.6 يبدأ...")
+    print("🚀 Retail Pro Bot v3.2.7 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
