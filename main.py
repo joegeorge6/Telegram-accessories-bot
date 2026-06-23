@@ -689,6 +689,56 @@ def ayman_processor(text, msg_date, current_num, source_id):
     else:
         return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
+def organizer_processor(text, msg_date, current_num, source_id):
+    """
+    معالج خاص للمكتب -1001443297771 (منظم الاكسسوارات):
+    - يحذف جميع أسطر الأسعار (مثل "ب 500", "price 500", "SS7 price 500") من الوصف.
+    - يستخرج السعر من آخر رقم في النص (500) ويطبق جدول التجزئة (500 → 700).
+    - يحتفظ فقط بأسطر الوصف الأساسية.
+    """
+    if not text:
+        return ""
+
+    old_result = default_processor(text, msg_date, current_num, source_id)
+
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    if len(lines) < 1:
+        return old_result
+
+    # استخراج السعر: نبحث عن آخر رقم في النص (بعد إزالة الرموز غير الرقمية)
+    all_numbers = re.findall(r'\d+', text)
+    if not all_numbers:
+        return old_result
+    price = int(all_numbers[-1])  # آخر رقم
+
+    # بناء الوصف: نحذف كل الأسطر التي تحتوي على أرقام فقط أو "ب" + رقم أو "price" + رقم
+    clean_lines = []
+    for line in lines:
+        # إذا كان السطر يحتوي على "ب" متبوعة برقم أو "price" (بأي تهجئة) أو يتكون من أرقام فقط، نحذفه
+        if re.search(r'ب\s*\d+', line, re.IGNORECASE):
+            continue
+        if re.search(r'price\s*\d+', line, re.IGNORECASE):
+            continue
+        if re.match(r'^\d+\s*$', line):  # سطر يتكون من أرقام فقط
+            continue
+        clean_lines.append(line)
+
+    description = "\n".join(clean_lines).strip()
+
+    cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
+    msg_date_cairo = msg_date.astimezone(cairo_tz)
+    today_str = msg_date_cairo.strftime("%d%m")
+    prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
+    my_code = f"{prefix}{current_num:02d}{today_str}"
+
+    retail_price = RETAIL_MAPPING.get(price, price)
+    price_ar = convert_to_arabic_numbers(retail_price)
+
+    if description:
+        return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
+    else:
+        return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
+
 # ==========================================
 # ربط كل مصدر بالمعالج الخاص به
 # ==========================================
@@ -696,10 +746,13 @@ PROCESSOR_MAP = {
     "sasaaccessories": sasa_processor,
     "ayselstore55": aysel_processor,
     "aymanelawamy123": ayman_processor,
+    -1001443297771: organizer_processor,  # منظم الاكسسوارات
 }
 
 def get_processor(source_id):
     if isinstance(source_id, str) and source_id in PROCESSOR_MAP:
+        return PROCESSOR_MAP[source_id]
+    if isinstance(source_id, int) and source_id in PROCESSOR_MAP:
         return PROCESSOR_MAP[source_id]
     if isinstance(source_id, int) and str(source_id) in PROCESSOR_MAP:
         return PROCESSOR_MAP[str(source_id)]
@@ -841,12 +894,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.3.10 (Sasa: remove all price lines, fixed online regex) Ready!"
+    return "Retail Pro Bot v3.4.0 (Organizer custom processor added) Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.3.10 يبدأ...")
+    print("🚀 Retail Pro Bot v3.4.0 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
