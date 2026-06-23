@@ -445,6 +445,7 @@ def sasa_processor(text, msg_date, current_num, source_id):
     معالج خاص لمكتب sasaaccessories:
     - يدعم الأخطاء الإملائية في كلمة 'اونلاين' (مثل 'اونلابن'، 'اون لاين').
     - يتجاهل سطر 'جمله' ويستخدم سعر 'اونلاين' إن وجد.
+    - يحذف جميع أسطر الأسعار (جمله وأونلاين) من الوصف النهائي.
     - إذا كان هناك عدة أزواج (جمله/اونلاين) يتم التعامل معها كطقم.
     - يعود للكود القديم إذا لم يجد نمطاً خاصاً.
     """
@@ -458,47 +459,36 @@ def sasa_processor(text, msg_date, current_num, source_id):
         return old_result
 
     # البحث عن أنماط: سطر وصف، ثم سطر يحتوي على "جمله" وسطر يحتوي على "اونل" (أي بداية "اونلاين" بأي تهجئة)
-    # نبحث عن وجود "جمله" و "اونل" في السطور
     has_jomla = any(re.search(r'جمله\s*\d+', line, re.IGNORECASE) for line in lines)
     has_online = any(re.search(r'اونل\S*ين|اون لاين', line, re.IGNORECASE) for line in lines)
 
     if not has_jomla or not has_online:
         return old_result
 
-    # تجميع الأزواج (وصف، سعر أونلاين)
-    # نمر على الأسطر ونجمع الأوصاف والأسعار
-    items = []
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        # سطر وصف: لا يحتوي على "جمله" ولا "اونل"
-        if not re.search(r'(جمله|اونل)', line, re.IGNORECASE):
-            # نتأكد أن السطر التالي يحتوي على "جمله" والذي يليه يحتوي على "اونل"
-            if i+2 < len(lines) and re.search(r'جمله\s*\d+', lines[i+1], re.IGNORECASE) and re.search(r'اونل\S*ين|اون لاين', lines[i+2], re.IGNORECASE):
-                item_name = line
-                online_price = extract_price_from_line(lines[i+2])
-                if online_price is not None:
-                    items.append((item_name, online_price))
-                i += 3
-                continue
-            else:
-                # قد يكون عنواناً للطقم
-                items.append(('bundle_title', line))
-                i += 1
-        else:
-            i += 1
+    # استخراج السعر من سطر الأونلاين
+    online_price = None
+    online_line = None
+    for line in lines:
+        if re.search(r'اونل\S*ين|اون لاين', line, re.IGNORECASE):
+            match = re.search(r'(\d+)', line)
+            if match:
+                online_price = int(match.group(1))
+                online_line = line
+            break
 
-    # استخراج عنوان الطقم إن وجد
-    bundle_title = None
-    item_list = []
-    for item in items:
-        if item[0] == 'bundle_title':
-            bundle_title = item[1]
-        else:
-            item_list.append(item)
-
-    if not item_list:
+    if online_price is None:
         return old_result
+
+    # بناء الوصف: نحذف كل الأسطر التي تحتوي على "جمله" أو "اونل" (أي أسعار)
+    clean_lines = []
+    for line in lines:
+        if re.search(r'جمله\s*\d+', line, re.IGNORECASE):
+            continue
+        if re.search(r'اونل\S*ين|اون لاين', line, re.IGNORECASE):
+            continue
+        clean_lines.append(line)
+
+    description = "\n".join(clean_lines).strip()
 
     cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
     msg_date_cairo = msg_date.astimezone(cairo_tz)
@@ -506,36 +496,13 @@ def sasa_processor(text, msg_date, current_num, source_id):
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     my_code = f"{prefix}{current_num:02d}{today_str}"
 
-    # إذا كان هناك أكثر من قطعة (طقم)
-    if len(item_list) > 1 and bundle_title is not None:
-        result_lines = [bundle_title, f"الكود : 🔖 {my_code}"]
-        for name, price in item_list:
-            retail_price = RETAIL_MAPPING.get(price, price)
-            price_ar = convert_to_arabic_numbers(retail_price)
-            result_lines.append(f"{name} بسعر : 💰 {price_ar} ج 🔥")
-        return "\n".join(result_lines)
+    retail_price = RETAIL_MAPPING.get(online_price, online_price)
+    price_ar = convert_to_arabic_numbers(retail_price)
 
-    # قطعة واحدة
-    if len(item_list) == 1:
-        # نجمع الأسطر التي ليست "جمله" ولا "اونل" كوصف (نحذف الأسطر الخاصة بالسعر)
-        clean_lines = []
-        for line in lines:
-            if re.search(r'(جمله|اونل)', line, re.IGNORECASE):
-                continue
-            clean_lines.append(line)
-        description = "\n".join(clean_lines).strip()
-        online_price = item_list[0][1]
-        if online_price is None:
-            return old_result
-        retail_price = RETAIL_MAPPING.get(online_price, online_price)
-        price_ar = convert_to_arabic_numbers(retail_price)
-        # إذا كان هناك وصف، نضعه قبل الكود، وإلا نعرض الكود فقط
-        if description:
-            return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
-        else:
-            return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
-
-    return old_result
+    if description:
+        return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
+    else:
+        return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 def aysel_processor(text, msg_date, current_num, source_id):
     """
@@ -877,12 +844,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.3.5 (Sasa: flexible online spelling like 'اونلابن') Ready!"
+    return "Retail Pro Bot v3.3.7 (Sasa: remove all price lines, keep only description) Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.3.5 يبدأ...")
+    print("🚀 Retail Pro Bot v3.3.7 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
