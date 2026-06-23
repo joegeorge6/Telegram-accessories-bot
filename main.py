@@ -459,7 +459,7 @@ def sasa_processor(text, msg_date, current_num, source_id):
 
     # البحث عن وجود "جمله" و "اونل" (أي تهجئة لـ "اونلاين")
     has_jomla = any(re.search(r'جمله\s*\d+', line, re.IGNORECASE) for line in lines)
-    has_online = any(re.search(r'اونل\S*ين|اون لاين', line, re.IGNORECASE) for line in lines)
+    has_online = any(re.search(r'اونل\S*', line, re.IGNORECASE) for line in lines)  # أي كلمة تبدأ بـ "اونل"
 
     if not has_jomla or not has_online:
         return old_result
@@ -467,7 +467,7 @@ def sasa_processor(text, msg_date, current_num, source_id):
     # استخراج السعر من سطر الأونلاين
     online_price = None
     for line in lines:
-        if re.search(r'اونل\S*ين|اون لاين', line, re.IGNORECASE):
+        if re.search(r'اونل\S*', line, re.IGNORECASE):
             match = re.search(r'(\d+)', line)
             if match:
                 online_price = int(match.group(1))
@@ -481,7 +481,7 @@ def sasa_processor(text, msg_date, current_num, source_id):
     for line in lines:
         if re.search(r'جمله\s*\d+', line, re.IGNORECASE):
             continue
-        if re.search(r'اونل\S*ين|اون لاين', line, re.IGNORECASE):
+        if re.search(r'اونل\S*', line, re.IGNORECASE):
             continue
         clean_lines.append(line)
 
@@ -841,12 +841,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.3.9 (Sasa: remove all price lines, use online price only) Ready!"
+    return "Retail Pro Bot v3.3.10 (Sasa: remove all price lines, fixed online regex) Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.3.9 يبدأ...")
+    print("🚀 Retail Pro Bot v3.3.10 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
