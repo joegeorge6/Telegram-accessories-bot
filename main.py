@@ -443,59 +443,62 @@ def extract_price_from_line(line):
 def sasa_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص لمكتب sasaaccessories:
-    - يحسب الناتج من الكود القديم أولاً.
-    - إذا وجد أنماطاً خاصة (طقم، منتج فردي مع جمله/اونلاين)، يطبق المعالجة المخصصة.
-    - وإلا يعيد الناتج القديم.
+    - يدعم الأخطاء الإملائية في كلمة 'اونلاين' (مثل 'اونلابن'، 'اون لاين').
+    - يتجاهل سطر 'جمله' ويستخدم سعر 'اونلاين' إن وجد.
+    - إذا كان هناك عدة أزواج (جمله/اونلاين) يتم التعامل معها كطقم.
+    - يعود للكود القديم إذا لم يجد نمطاً خاصاً.
     """
     if not text:
         return ""
 
-    # 1. الناتج من الكود القديم (كأساس)
     old_result = default_processor(text, msg_date, current_num, source_id)
 
-    # 2. تحليل النص للبحث عن أنماط خاصة
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     if len(lines) < 3:
         return old_result
 
-    # نبحث عن وجود جمله/اونلاين في السطور
-    has_jomla_online = False
-    for i, line in enumerate(lines):
-        if re.search(r'جمله\s*\d+', line, re.IGNORECASE) and i+1 < len(lines) and re.search(r'اونلاين\s*\d+', lines[i+1], re.IGNORECASE):
-            has_jomla_online = True
-            break
+    # البحث عن أنماط: سطر وصف، ثم سطر يحتوي على "جمله" وسطر يحتوي على "اونل" (أي بداية "اونلاين" بأي تهجئة)
+    # نبحث عن وجود "جمله" و "اونل" في السطور
+    has_jomla = any(re.search(r'جمله\s*\d+', line, re.IGNORECASE) for line in lines)
+    has_online = any(re.search(r'اونل\S*ين|اون لاين', line, re.IGNORECASE) for line in lines)
 
-    if not has_jomla_online:
+    if not has_jomla or not has_online:
         return old_result
 
-    # 3. إذا وجدنا نمطاً خاصاً، نطبق المعالجة المخصصة
-    pattern = []
+    # تجميع الأزواج (وصف، سعر أونلاين)
+    # نمر على الأسطر ونجمع الأوصاف والأسعار
+    items = []
     i = 0
     while i < len(lines):
         line = lines[i]
-        if not re.search(r'(جمله|اونلاين)', line, re.IGNORECASE):
-            if i+2 < len(lines) and re.search(r'جمله\s*\d+', lines[i+1], re.IGNORECASE) and re.search(r'اونلاين\s*\d+', lines[i+2], re.IGNORECASE):
+        # سطر وصف: لا يحتوي على "جمله" ولا "اونل"
+        if not re.search(r'(جمله|اونل)', line, re.IGNORECASE):
+            # نتأكد أن السطر التالي يحتوي على "جمله" والذي يليه يحتوي على "اونل"
+            if i+2 < len(lines) and re.search(r'جمله\s*\d+', lines[i+1], re.IGNORECASE) and re.search(r'اونل\S*ين|اون لاين', lines[i+2], re.IGNORECASE):
                 item_name = line
                 online_price = extract_price_from_line(lines[i+2])
                 if online_price is not None:
-                    pattern.append(('item', item_name, online_price))
-                else:
-                    pattern.append(('item', item_name, None))
+                    items.append((item_name, online_price))
                 i += 3
                 continue
             else:
-                pattern.append(('bundle_title', line))
+                # قد يكون عنواناً للطقم
+                items.append(('bundle_title', line))
                 i += 1
         else:
             i += 1
 
+    # استخراج عنوان الطقم إن وجد
     bundle_title = None
-    items = []
-    for p in pattern:
-        if p[0] == 'bundle_title':
-            bundle_title = p[1]
-        elif p[0] == 'item':
-            items.append((p[1], p[2]))
+    item_list = []
+    for item in items:
+        if item[0] == 'bundle_title':
+            bundle_title = item[1]
+        else:
+            item_list.append(item)
+
+    if not item_list:
+        return old_result
 
     cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
     msg_date_cairo = msg_date.astimezone(cairo_tz)
@@ -503,68 +506,65 @@ def sasa_processor(text, msg_date, current_num, source_id):
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     my_code = f"{prefix}{current_num:02d}{today_str}"
 
-    if len(items) > 1 and bundle_title is not None:
+    # إذا كان هناك أكثر من قطعة (طقم)
+    if len(item_list) > 1 and bundle_title is not None:
         result_lines = [bundle_title, f"الكود : 🔖 {my_code}"]
-        for item_name, online_price in items:
-            if online_price is not None:
-                retail_price = RETAIL_MAPPING.get(online_price, online_price)
-                price_ar = convert_to_arabic_numbers(retail_price)
-                result_lines.append(f"{item_name} بسعر : 💰 {price_ar} ج 🔥")
-            else:
-                result_lines.append(f"{item_name} (سعر غير متوفر)")
+        for name, price in item_list:
+            retail_price = RETAIL_MAPPING.get(price, price)
+            price_ar = convert_to_arabic_numbers(retail_price)
+            result_lines.append(f"{name} بسعر : 💰 {price_ar} ج 🔥")
         return "\n".join(result_lines)
 
-    if len(items) == 1:
+    # قطعة واحدة
+    if len(item_list) == 1:
+        # نجمع الأسطر التي ليست "جمله" ولا "اونل" كوصف (نحذف الأسطر الخاصة بالسعر)
         clean_lines = []
         for line in lines:
-            if re.search(r'جمله|اونلاين', line, re.IGNORECASE):
+            if re.search(r'(جمله|اونل)', line, re.IGNORECASE):
                 continue
             clean_lines.append(line)
         description = "\n".join(clean_lines).strip()
-        online_price = items[0][1]
+        online_price = item_list[0][1]
         if online_price is None:
             return old_result
         retail_price = RETAIL_MAPPING.get(online_price, online_price)
         price_ar = convert_to_arabic_numbers(retail_price)
-        return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
+        # إذا كان هناك وصف، نضعه قبل الكود، وإلا نعرض الكود فقط
+        if description:
+            return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
+        else:
+            return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
-    # إذا لم يطابق أي نمط، نعود للنتيجة القديمة
     return old_result
 
 def aysel_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص لمكتب ayselstore55:
     - يحسب الناتج من الكود القديم أولاً.
-    - إذا وجد أنماطاً خاصة (خيارات متعددة، منتجات متعددة بأرقام، إلخ) يطبق المعالجة المخصصة.
+    - إذا وجد أنماطاً خاصة (خيارات متعددة، منتجات متعددة بأرقام في نهاية السطر، إلخ) يطبق المعالجة المخصصة.
     - وإلا يعيد الناتج القديم.
     """
     if not text:
         return ""
 
-    # 1. الناتج من الكود القديم (كأساس)
     old_result = default_processor(text, msg_date, current_num, source_id)
 
-    # 2. تحليل النص للبحث عن أنماط خاصة
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     if len(lines) < 1:
         return old_result
 
-    # نبحث عن الخيارات المتعددة (سعر السلفر، الجولد، الانسيال، السلسله)
     multi_keywords = ['سعر السلفر', 'سعر الجولد', 'سعر الانسيال', 'سعر السلسله', 'سعر السلسلة']
     has_multi = any(any(kw in line for kw in multi_keywords) for line in lines)
 
-    # نبحث عن وجود أرقام في نهاية الأسطر (منتجات متعددة أو سعر واحد)
     has_prices_in_lines = False
     for line in lines:
-        if re.search(r'\d+\s*$', line) or re.search(r'\d+\s*[^\d]*$', line):
+        if re.search(r'\d+\s*[^\d]*$', line):
             has_prices_in_lines = True
             break
 
     if not has_multi and not has_prices_in_lines:
         return old_result
 
-    # 3. إذا وجدنا نمطاً خاصاً، نطبق المعالجة المخصصة
-    # تطبيع النصوص
     text = re.sub(r'(?:استالس|ستالس|استانليس)', 'استانلس', text, flags=re.IGNORECASE)
     text = re.sub(r'(?:الانسياب|انسياب)', 'الانسيال', text, flags=re.IGNORECASE)
     lines = [line.strip() for line in text.split('\n') if line.strip()]
@@ -608,22 +608,20 @@ def aysel_processor(text, msg_date, current_num, source_id):
                 special_price = int(match.group(1))
             continue
         else:
-            numbers = re.findall(r'\d+', line)
-            if numbers:
-                price = int(numbers[-1])
-                clean_line = re.sub(r'\s*\d+\s*(?=[^\d]*$)', '', line).strip()
+            match_price = re.search(r'(\d+)\s*[^\d]*$', line)
+            if match_price:
+                price = int(match_price.group(1))
+                clean_line = re.sub(r'\s*\d+\s*[^\d]*$', '', line).strip()
                 other_items.append((clean_line, price))
             else:
                 description_lines.append(line)
 
-    # توليد الكود
     cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
     msg_date_cairo = msg_date.astimezone(cairo_tz)
     today_str = msg_date_cairo.strftime("%d%m")
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     my_code = f"{prefix}{current_num:02d}{today_str}"
 
-    # حالة الخيارات المتعددة
     if multi_prices:
         description = "\n".join(description_lines).strip()
         result_lines = [description, f"الكود : 🔖 {my_code}"]
@@ -635,7 +633,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
                 result_lines.append(f"{label}: 💰 {price_ar} ج 🔥")
         return "\n".join(result_lines)
 
-    # حالة المنتجات المتعددة
     if len(other_items) > 1:
         title = "\n".join(description_lines).strip() if description_lines else ""
         result_lines = []
@@ -651,7 +648,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
                 result_lines.append(f"بسعر : 💰 {price_ar} ج 🔥")
         return "\n".join(result_lines)
 
-    # حالة منتج واحد
     if len(other_items) == 1 and not description_lines:
         item_text, price = other_items[0]
         retail = RETAIL_MAPPING.get(price, price)
@@ -661,7 +657,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
         else:
             return f"{item_text}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
-    # حالة السعر الواحد (عرض خاص، سعر الدسته، سعر القطعة)
     final_price = None
     if special_price is not None:
         final_price = special_price
@@ -674,15 +669,69 @@ def aysel_processor(text, msg_date, current_num, source_id):
         description = "\n".join(description_lines).strip()
         retail_price = RETAIL_MAPPING.get(final_price, final_price)
         price_ar = convert_to_arabic_numbers(retail_price)
+        if not description:
+            return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
         return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
-    # إذا لم يطابق أي نمط، نعود للنتيجة القديمة
     return old_result
 
+def ayman_processor(text, msg_date, current_num, source_id):
+    """
+    معالج خاص لقناة aymanelawamy123:
+    - يستخدم الكود القديم كأساس.
+    - يبحث عن سعر 'اونلاين' أو 'اون لاين' (يتجاهل سعر الدسته/الدستة).
+    - إذا وجد السعر، يستخدمه ويطبق جدول التجزئة.
+    - إذا لم يجد، يعيد الناتج القديم.
+    """
+    if not text:
+        return ""
+
+    old_result = default_processor(text, msg_date, current_num, source_id)
+
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    if len(lines) < 1:
+        return old_result
+
+    online_price = None
+    description_lines = []
+
+    for line in lines:
+        if re.search(r'دسته|دستة', line, re.IGNORECASE):
+            continue
+
+        if re.search(r'اونلاين|اون لاين', line, re.IGNORECASE):
+            match = re.search(r'(\d+)', line)
+            if match:
+                online_price = int(match.group(1))
+            continue
+
+        description_lines.append(line)
+
+    if online_price is None:
+        return old_result
+
+    retail_price = RETAIL_MAPPING.get(online_price, online_price)
+    price_ar = convert_to_arabic_numbers(retail_price)
+
+    cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
+    msg_date_cairo = msg_date.astimezone(cairo_tz)
+    today_str = msg_date_cairo.strftime("%d%m")
+    prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
+    my_code = f"{prefix}{current_num:02d}{today_str}"
+
+    description = "\n".join(description_lines).strip()
+    if not description:
+        return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
+    else:
+        return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
+
+# ==========================================
 # ربط كل مصدر بالمعالج الخاص به
+# ==========================================
 PROCESSOR_MAP = {
     "sasaaccessories": sasa_processor,
     "ayselstore55": aysel_processor,
+    "aymanelawamy123": ayman_processor,
 }
 
 def get_processor(source_id):
@@ -828,12 +877,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.3.1 (All channels: default processor as base, custom only when needed) Ready!"
+    return "Retail Pro Bot v3.3.5 (Sasa: flexible online spelling like 'اونلابن') Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.3.1 يبدأ...")
+    print("🚀 Retail Pro Bot v3.3.5 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
