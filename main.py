@@ -12,8 +12,8 @@ from threading import Thread
 # ==========================================
 # 1. الإعدادات الأساسية
 # ==========================================
-API_ID = int(os.environ.get("API_ID", "10182970"))
-API_HASH = os.environ.get("API_HASH", "0f4e456fc8101e8be8e0dad6aeb87041")
+API_ID = int(os.environ.get("API_ID"))
+API_HASH = os.environ.get("API_HASH")
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
 
 RETAIL_CHANNEL = "@girlsfashionesta"
@@ -692,52 +692,44 @@ def ayman_processor(text, msg_date, current_num, source_id):
 def organizer_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص للمكتب -1001443297771 (منظم الاكسسوارات):
-    - يحذف جميع أسطر الأسعار (مثل "ب 500", "price 500", "SS7 price 500") من الوصف.
-    - يستخرج السعر من آخر رقم في النص (500) ويطبق جدول التجزئة (500 → 700).
-    - يحتفظ فقط بأسطر الوصف الأساسية.
+    - يعتمد على الكود القديم (default_processor) كأساس للحصول على الوصف والترجمة.
+    - ثم يقوم بحذف أي أسطر أسعار متبقية (مثل "ب 500" أو "price 500") من النص النهائي.
+    - يستخدم السعر المستخرج من الكود القديم أو من آخر رقم في النص.
     """
     if not text:
         return ""
 
+    # 1. نحصل على الناتج من الكود القديم (الذي يتضمن الترجمة إن لزم)
     old_result = default_processor(text, msg_date, current_num, source_id)
-
-    lines = [line.strip() for line in text.split('\n') if line.strip()]
-    if len(lines) < 1:
+    if not old_result:
         return old_result
 
-    # استخراج السعر: نبحث عن آخر رقم في النص (بعد إزالة الرموز غير الرقمية)
-    all_numbers = re.findall(r'\d+', text)
-    if not all_numbers:
-        return old_result
-    price = int(all_numbers[-1])  # آخر رقم
-
-    # بناء الوصف: نحذف كل الأسطر التي تحتوي على أرقام فقط أو "ب" + رقم أو "price" + رقم
+    # 2. نقسم النص الناتج إلى أسطر
+    lines = old_result.split('\n')
     clean_lines = []
+
+    # 3. نحذف أي سطر يحتوي على "ب" + رقم أو "price" + رقم (بأي تهجئة) أو أرقام فقط
     for line in lines:
-        # إذا كان السطر يحتوي على "ب" متبوعة برقم أو "price" (بأي تهجئة) أو يتكون من أرقام فقط، نحذفه
-        if re.search(r'ب\s*\d+', line, re.IGNORECASE):
+        line_stripped = line.strip()
+        if not line_stripped:
             continue
-        if re.search(r'price\s*\d+', line, re.IGNORECASE):
+        # إذا كان السطر يحتوي على "ب" متبوعة برقم
+        if re.search(r'ب\s*\d+', line_stripped, re.IGNORECASE):
             continue
-        if re.match(r'^\d+\s*$', line):  # سطر يتكون من أرقام فقط
+        # إذا كان السطر يحتوي على "price" متبوعة برقم
+        if re.search(r'price\s*\d+', line_stripped, re.IGNORECASE):
+            continue
+        # إذا كان السطر يتكون من أرقام فقط (ورموز)
+        if re.match(r'^\d+\s*$', line_stripped):
             continue
         clean_lines.append(line)
 
-    description = "\n".join(clean_lines).strip()
+    # 4. إذا أصبح النص فارغاً بعد الحذف، نعيد الناتج القديم (ربما يكون قد احتوى على شيء مفيد)
+    if not clean_lines:
+        return old_result
 
-    cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
-    msg_date_cairo = msg_date.astimezone(cairo_tz)
-    today_str = msg_date_cairo.strftime("%d%m")
-    prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
-    my_code = f"{prefix}{current_num:02d}{today_str}"
-
-    retail_price = RETAIL_MAPPING.get(price, price)
-    price_ar = convert_to_arabic_numbers(retail_price)
-
-    if description:
-        return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
-    else:
-        return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
+    # 5. نعيد بناء النص النهائي
+    return "\n".join(clean_lines)
 
 # ==========================================
 # ربط كل مصدر بالمعالج الخاص به
@@ -746,7 +738,7 @@ PROCESSOR_MAP = {
     "sasaaccessories": sasa_processor,
     "ayselstore55": aysel_processor,
     "aymanelawamy123": ayman_processor,
-    -1001443297771: organizer_processor,  # منظم الاكسسوارات
+    -1001443297771: organizer_processor,
 }
 
 def get_processor(source_id):
@@ -894,12 +886,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.4.0 (Organizer custom processor added) Ready!"
+    return "Retail Pro Bot v3.4.1 (Organizer uses default_processor then removes price lines) Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.4.0 يبدأ...")
+    print("🚀 Retail Pro Bot v3.4.1 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
