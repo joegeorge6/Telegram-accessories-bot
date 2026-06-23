@@ -444,9 +444,8 @@ def sasa_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص لمكتب sasaaccessories:
     - يدعم الأخطاء الإملائية في كلمة 'اونلاين' (مثل 'اونلابن'، 'اون لاين').
-    - يتجاهل سطر 'جمله' ويستخدم سعر 'اونلاين' إن وجد.
-    - يحذف جميع أسطر الأسعار (جمله وأونلاين) من الوصف النهائي.
-    - إذا كان هناك عدة أزواج (جمله/اونلاين) يتم التعامل معها كطقم.
+    - يتجاهل جميع أسطر الأسعار (جمله وأونلاين بأي تهجئة) من الوصف النهائي.
+    - يستخرج السعر من سطر الأونلاين ويستخدمه لتطبيق جدول التجزئة.
     - يعود للكود القديم إذا لم يجد نمطاً خاصاً.
     """
     if not text:
@@ -458,7 +457,7 @@ def sasa_processor(text, msg_date, current_num, source_id):
     if len(lines) < 3:
         return old_result
 
-    # البحث عن أنماط: سطر وصف، ثم سطر يحتوي على "جمله" وسطر يحتوي على "اونل" (أي بداية "اونلاين" بأي تهجئة)
+    # البحث عن وجود "جمله" و "اونل" (أي تهجئة لـ "اونلاين")
     has_jomla = any(re.search(r'جمله\s*\d+', line, re.IGNORECASE) for line in lines)
     has_online = any(re.search(r'اونل\S*ين|اون لاين', line, re.IGNORECASE) for line in lines)
 
@@ -467,13 +466,11 @@ def sasa_processor(text, msg_date, current_num, source_id):
 
     # استخراج السعر من سطر الأونلاين
     online_price = None
-    online_line = None
     for line in lines:
         if re.search(r'اونل\S*ين|اون لاين', line, re.IGNORECASE):
             match = re.search(r'(\d+)', line)
             if match:
                 online_price = int(match.group(1))
-                online_line = line
             break
 
     if online_price is None:
@@ -844,12 +841,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.3.7 (Sasa: remove all price lines, keep only description) Ready!"
+    return "Retail Pro Bot v3.3.9 (Sasa: remove all price lines, use online price only) Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.3.7 يبدأ...")
+    print("🚀 Retail Pro Bot v3.3.9 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
