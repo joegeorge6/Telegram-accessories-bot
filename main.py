@@ -443,6 +443,7 @@ def extract_price_from_line(line):
 def sasa_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص لمكتب sasaaccessories:
+    - يمنع نسخ أي نص يحتوي على رابط.
     - يدعم الأخطاء الإملائية في كلمة 'اونلاين' (مثل 'اونلابن'، 'اون لاين').
     - يتجاهل جميع أسطر الأسعار (جمله وأونلاين بأي تهجئة) من الوصف النهائي.
     - يستخرج السعر من سطر الأونلاين ويستخدمه لتطبيق جدول التجزئة.
@@ -451,20 +452,22 @@ def sasa_processor(text, msg_date, current_num, source_id):
     if not text:
         return ""
 
+    # منع الروابط
+    if re.search(r'https?://', text, re.IGNORECASE):
+        return None
+
     old_result = default_processor(text, msg_date, current_num, source_id)
 
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     if len(lines) < 3:
         return old_result
 
-    # البحث عن وجود "جمله" و "اونل" (أي تهجئة لـ "اونلاين")
     has_jomla = any(re.search(r'جمله\s*\d+', line, re.IGNORECASE) for line in lines)
-    has_online = any(re.search(r'اونل\S*', line, re.IGNORECASE) for line in lines)  # أي كلمة تبدأ بـ "اونل"
+    has_online = any(re.search(r'اونل\S*', line, re.IGNORECASE) for line in lines)
 
     if not has_jomla or not has_online:
         return old_result
 
-    # استخراج السعر من سطر الأونلاين
     online_price = None
     for line in lines:
         if re.search(r'اونل\S*', line, re.IGNORECASE):
@@ -476,7 +479,6 @@ def sasa_processor(text, msg_date, current_num, source_id):
     if online_price is None:
         return old_result
 
-    # بناء الوصف: نحذف كل الأسطر التي تحتوي على "جمله" أو "اونل" (أي أسعار)
     clean_lines = []
     for line in lines:
         if re.search(r'جمله\s*\d+', line, re.IGNORECASE):
@@ -504,12 +506,17 @@ def sasa_processor(text, msg_date, current_num, source_id):
 def aysel_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص لمكتب ayselstore55:
+    - يمنع نسخ أي نص يحتوي على رابط.
     - يحسب الناتج من الكود القديم أولاً.
     - إذا وجد أنماطاً خاصة (خيارات متعددة، منتجات متعددة بأرقام في نهاية السطر، إلخ) يطبق المعالجة المخصصة.
     - وإلا يعيد الناتج القديم.
     """
     if not text:
         return ""
+
+    # منع الروابط
+    if re.search(r'https?://', text, re.IGNORECASE):
+        return None
 
     old_result = default_processor(text, msg_date, current_num, source_id)
 
@@ -642,6 +649,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
 def ayman_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص لقناة aymanelawamy123:
+    - يمنع نسخ أي نص يحتوي على رابط.
     - يستخدم الكود القديم كأساس.
     - يبحث عن سعر 'اونلاين' أو 'اون لاين' (يتجاهل سعر الدسته/الدستة).
     - إذا وجد السعر، يستخدمه ويطبق جدول التجزئة.
@@ -649,6 +657,10 @@ def ayman_processor(text, msg_date, current_num, source_id):
     """
     if not text:
         return ""
+
+    # منع الروابط
+    if re.search(r'https?://', text, re.IGNORECASE):
+        return None
 
     old_result = default_processor(text, msg_date, current_num, source_id)
 
@@ -692,12 +704,17 @@ def ayman_processor(text, msg_date, current_num, source_id):
 def organizer_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص للمكتب -1001443297771 (منظم الاكسسوارات):
+    - يمنع نسخ أي نص يحتوي على رابط.
     - يعتمد على الكود القديم (default_processor) كأساس للحصول على الوصف والترجمة.
     - ثم يقوم بحذف أي أسطر أسعار متبقية (مثل "ب 500" أو "price 500") من النص النهائي.
     - يستخدم السعر المستخرج من الكود القديم أو من آخر رقم في النص.
     """
     if not text:
         return ""
+
+    # منع الروابط
+    if re.search(r'https?://', text, re.IGNORECASE):
+        return None
 
     old_result = default_processor(text, msg_date, current_num, source_id)
     if not old_result:
@@ -726,6 +743,7 @@ def organizer_processor(text, msg_date, current_num, source_id):
 def channel_i_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص للقناة -1001448553593 (البادئة I):
+    - يمنع نسخ أي نص يحتوي على رابط.
     - يستخدم الكود القديم (default_processor) كأساس للحصول على الوصف الأساسي والترجمة.
     - إذا وجد أسطراً تحتوي على "ب" + رقم + "ج" (منتجات متعددة)، يستخرج الأسعار الفردية ويضيفها كنقاط منفصلة.
     - إذا لم يجد نمطاً خاصاً، يعيد ناتج الكود القديم.
@@ -733,12 +751,14 @@ def channel_i_processor(text, msg_date, current_num, source_id):
     if not text:
         return ""
 
-    # 1. نحصل على الناتج من الكود القديم (كأساس)
+    # منع الروابط
+    if re.search(r'https?://', text, re.IGNORECASE):
+        return None
+
     old_result = default_processor(text, msg_date, current_num, source_id)
     if not old_result:
         return old_result
 
-    # 2. نفحص النص الأصلي للبحث عن منتجات متعددة (أسطر تحتوي على "ب" + رقم + "ج")
     original_lines = [line.strip() for line in text.split('\n') if line.strip()]
     price_pattern = re.compile(r'(.*?)\s*ب\s*(\d+)\s*ج')
     products = []
@@ -749,41 +769,30 @@ def channel_i_processor(text, msg_date, current_num, source_id):
         if match:
             product_name = match.group(1).strip()
             price = int(match.group(2))
-            # فقط إذا كان هناك اسم منتج (غير فارغ)
             if product_name:
                 products.append((product_name, price))
         else:
-            # أسطر لا تحتوي على سعر تُضاف للوصف
             description_lines.append(line)
 
-    # 3. إذا لم نجد منتجين على الأقل، نعيد الناتج القديم
     if len(products) < 2:
         return old_result
 
-    # 4. نستخرج الوصف الأساسي من الناتج القديم (السطور التي لا تحتوي على أسعار)
-    #    نأخذ من old_result الأسطر التي لا تحتوي على أسعار (يمكننا استخراجها من old_result نفسه)
-    #    لكن old_result يحتوي على الكود والسعر، لذلك سنبني وصفاً جديداً من description_lines
-    #    مع تطبيق استبدال الكلمات على description_lines (مثل infinity → فاشونيستا)
     description_text = "\n".join(description_lines)
-    # نطبق نفس استبدالات الكلمات الموجودة في build_text_original
     description_text = re.sub(r'(?<![a-zA-Z])(?:infiniyu|infinity)(?![a-zA-Z])', 'فاشونيستا', description_text, flags=re.IGNORECASE)
     description_text = re.sub(r'(?:استالس|ستالس|استانليس)', 'استانلس', description_text, flags=re.IGNORECASE)
     description_text = re.sub(r'(?:الانسياب|انسياب)', 'الانسيال', description_text, flags=re.IGNORECASE)
     description_text = re.sub(r'\bبلاتيد\b', 'بليتد', description_text, flags=re.IGNORECASE)
     description_text = re.sub(r'\bزركون\b', 'زيركون', description_text, flags=re.IGNORECASE)
     description_text = re.sub(r'\bسعو\b', 'سعر', description_text, flags=re.IGNORECASE)
-    # إزالة الكلمات المحددة
     for word in WORDS_TO_REMOVE:
         description_text = re.sub(rf'\b{word}\b', '', description_text, flags=re.IGNORECASE)
 
-    # 5. إنشاء الكود
     cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
     msg_date_cairo = msg_date.astimezone(cairo_tz)
     today_str = msg_date_cairo.strftime("%d%m")
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     my_code = f"{prefix}{current_num:02d}{today_str}"
 
-    # 6. بناء الناتج النهائي مع الأسعار المحولة
     result_lines = [description_text, f"الكود : 🔖 {my_code}"]
     for name, price in products:
         retail_price = RETAIL_MAPPING.get(price, price)
@@ -948,12 +957,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.4.2 (Channel I processor: multiple products support) Ready!"
+    return "Retail Pro Bot v3.4.3 (All custom processors: prevent links) Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.4.2 يبدأ...")
+    print("🚀 Retail Pro Bot v3.4.3 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
