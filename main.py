@@ -452,7 +452,6 @@ def sasa_processor(text, msg_date, current_num, source_id):
     if not text:
         return ""
 
-    # منع الروابط
     if re.search(r'https?://', text, re.IGNORECASE):
         return None
 
@@ -514,7 +513,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
     if not text:
         return ""
 
-    # منع الروابط
     if re.search(r'https?://', text, re.IGNORECASE):
         return None
 
@@ -658,7 +656,6 @@ def ayman_processor(text, msg_date, current_num, source_id):
     if not text:
         return ""
 
-    # منع الروابط
     if re.search(r'https?://', text, re.IGNORECASE):
         return None
 
@@ -705,9 +702,10 @@ def organizer_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص للمكتب -1001443297771 (منظم الاكسسوارات):
     - يمنع نسخ أي نص يحتوي على رابط.
-    - يعتمد على الكود القديم (default_processor) كأساس للحصول على الوصف والترجمة.
-    - ثم يقوم بحذف أي أسطر أسعار متبقية (مثل "ب 500" أو "price 500") من النص النهائي.
-    - يستخدم السعر المستخرج من الكود القديم أو من آخر رقم في النص.
+    - يدعم الأكواد مثل R1555 price 35 (يترجم الحرف الأول من الكود).
+    - يحذف جميع أسطر الأسعار (price, سعر الطابلوه, سعر القطعه, إلخ).
+    - يستخدم السعر من سطر price أو آخر رقم في النص.
+    - يعتمد على الكود القديم للحالات الأخرى.
     """
     if not text:
         return ""
@@ -716,6 +714,52 @@ def organizer_processor(text, msg_date, current_num, source_id):
     if re.search(r'https?://', text, re.IGNORECASE):
         return None
 
+    # أولاً: البحث عن كود مثل R1555 أو R1552 (حرف + أرقام)
+    code_match = re.search(r'([A-Z]+)\s*\d+', text, re.IGNORECASE)
+    if code_match:
+        prefix_letter = code_match.group(1).upper()
+        # التحقق من وجود الحرف في قاموس الترجمة
+        if prefix_letter in P_CODE_TRANSLATION:
+            item_name = P_CODE_TRANSLATION[prefix_letter]
+            # بناء الوصف الأساسي
+            description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
+
+            # استخراج السعر (من سطر price أو آخر رقم)
+            price = None
+            # البحث عن price
+            price_match = re.search(r'price\s*(\d+)', text, re.IGNORECASE)
+            if price_match:
+                price = int(price_match.group(1))
+            else:
+                # البحث عن آخر رقم في النص
+                numbers = re.findall(r'\d+', text)
+                if numbers:
+                    # نأخذ آخر رقم (قد يكون 35 أو 27 أو 3350)
+                    # لكن نفضل الرقم الأصغر (المناسب) - نأخذ الرقم الذي بين 15 و 2000
+                    for num in reversed(numbers):
+                        val = int(num)
+                        if 15 <= val <= 2000:
+                            price = val
+                            break
+                    if price is None:
+                        price = int(numbers[-1]) if numbers else None
+
+            if price is None:
+                return default_processor(text, msg_date, current_num, source_id)
+
+            retail_price = RETAIL_MAPPING.get(price, price)
+            price_ar = convert_to_arabic_numbers(retail_price)
+
+            # توليد الكود
+            cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
+            msg_date_cairo = msg_date.astimezone(cairo_tz)
+            today_str = msg_date_cairo.strftime("%d%m")
+            prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
+            my_code = f"{prefix}{current_num:02d}{today_str}"
+
+            return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
+
+    # إذا لم نجد كوداً مناسباً، نستخدم المعالج القديم (للمنتجات الأخرى مثل منظم الاكسسوارات)
     old_result = default_processor(text, msg_date, current_num, source_id)
     if not old_result:
         return old_result
@@ -751,7 +795,6 @@ def channel_i_processor(text, msg_date, current_num, source_id):
     if not text:
         return ""
 
-    # منع الروابط
     if re.search(r'https?://', text, re.IGNORECASE):
         return None
 
@@ -957,12 +1000,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.4.3 (All custom processors: prevent links) Ready!"
+    return "Retail Pro Bot v3.4.4 (Organizer: support R-code translation) Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.4.3 يبدأ...")
+    print("🚀 Retail Pro Bot v3.4.4 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
