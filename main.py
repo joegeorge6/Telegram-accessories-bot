@@ -47,8 +47,14 @@ BLOCK_KEYWORDS = [
 ]
 
 P_CODE_TRANSLATION = {
-    "A": "انسيال", "K": "خلخال", "N": "سلسلة", "CP": "كوليه",
-    "C": "كوليه", "E": "حلق", "R": "خاتم", "B": "اسورة"
+    "A": "انسيال",
+    "K": "خلخال",
+    "N": "سلسلة",
+    "CP": "كوليه",
+    # "C": "كوليه",  # تم إزالة الترجمة العامة للحرف C
+    "E": "حلق",
+    "R": "خاتم",
+    "B": "اسورة"
 }
 
 def load_counters():
@@ -506,8 +512,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص لمكتب ayselstore55:
     - يمنع نسخ أي نص يحتوي على رابط.
-    - يحسب الناتج من الكود القديم أولاً.
-    - إذا وجد أنماطاً خاصة (خيارات متعددة، منتجات متعددة بأرقام في نهاية السطر، إلخ) يطبق المعالجة المخصصة.
     - يحتفظ بالوصف الكامل (بما في ذلك الأرقام في منتصف النص).
     - يحذف فقط أسطر الأسعار والأكواد مثل B-011.
     """
@@ -522,9 +526,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     if len(lines) < 1:
         return old_result
-
-    multi_keywords = ['سعر السلفر', 'سعر الجولد', 'سعر الانسيال', 'سعر السلسله', 'سعر السلسلة']
-    has_multi = any(any(kw in line for kw in multi_keywords) for line in lines)
 
     # نبحث عن أسطر تنتهي بأرقام (أسعار) أو أكواد مثل B-011
     price_lines = []
@@ -629,6 +630,8 @@ def organizer_processor(text, msg_date, current_num, source_id):
     معالج خاص للمكتب -1001443297771 (منظم الاكسسوارات):
     - يمنع نسخ أي نص يحتوي على رابط.
     - يدعم الأكواد مثل R1555 price 35 (يترجم الحرف الأول من الكود).
+    - قاعدة خاصة: حرف C يُترجم إلى "سلسلة نظارة" (فقط في هذه القناة).
+    - الحرف CP يُترجم إلى "كوليه" (من القاموس العام).
     - يحذف جميع أسطر الأسعار (price, سعر الطابلوه, سعر القطعه, إلخ).
     - يستخدم السعر من سطر price أو آخر رقم في النص.
     - يعتمد على الكود القديم للحالات الأخرى.
@@ -639,44 +642,55 @@ def organizer_processor(text, msg_date, current_num, source_id):
     if re.search(r'https?://', text, re.IGNORECASE):
         return None
 
-    # البحث عن كود مثل R1555 أو R1552
+    # البحث عن كود مثل R1555, C1234, CP1555
     code_match = re.search(r'([A-Z]+)\s*\d+', text, re.IGNORECASE)
     if code_match:
         prefix_letter = code_match.group(1).upper()
-        if prefix_letter in P_CODE_TRANSLATION:
+        
+        # قاعدة خاصة لهذه القناة: الحرف C بمفرده = سلسلة نظارة
+        if prefix_letter == "C":
+            item_name = "سلسلة نظارة"
+        # الحروف الأخرى (مثل R, A, CP) من القاموس العام
+        elif prefix_letter in P_CODE_TRANSLATION:
             item_name = P_CODE_TRANSLATION[prefix_letter]
-            description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
+        else:
+            item_name = prefix_letter  # احتياطي
 
-            price = None
-            price_match = re.search(r'price\s*(\d+)', text, re.IGNORECASE)
-            if price_match:
-                price = int(price_match.group(1))
-            else:
-                numbers = re.findall(r'\d+', text)
-                if numbers:
-                    for num in reversed(numbers):
-                        val = int(num)
-                        if 15 <= val <= 2000:
-                            price = val
-                            break
-                    if price is None:
-                        price = int(numbers[-1]) if numbers else None
+        # بناء الوصف الأساسي
+        description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
 
-            if price is None:
-                return default_processor(text, msg_date, current_num, source_id)
+        # استخراج السعر (من سطر price أو آخر رقم)
+        price = None
+        price_match = re.search(r'price\s*(\d+)', text, re.IGNORECASE)
+        if price_match:
+            price = int(price_match.group(1))
+        else:
+            numbers = re.findall(r'\d+', text)
+            if numbers:
+                for num in reversed(numbers):
+                    val = int(num)
+                    if 15 <= val <= 2000:
+                        price = val
+                        break
+                if price is None:
+                    price = int(numbers[-1]) if numbers else None
 
-            retail_price = RETAIL_MAPPING.get(price, price)
-            price_ar = convert_to_arabic_numbers(retail_price)
+        if price is None:
+            return default_processor(text, msg_date, current_num, source_id)
 
-            cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
-            msg_date_cairo = msg_date.astimezone(cairo_tz)
-            today_str = msg_date_cairo.strftime("%d%m")
-            prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
-            my_code = f"{prefix}{current_num:02d}{today_str}"
+        retail_price = RETAIL_MAPPING.get(price, price)
+        price_ar = convert_to_arabic_numbers(retail_price)
 
-            return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
+        # توليد الكود
+        cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
+        msg_date_cairo = msg_date.astimezone(cairo_tz)
+        today_str = msg_date_cairo.strftime("%d%m")
+        prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
+        my_code = f"{prefix}{current_num:02d}{today_str}"
 
-    # إذا لم نجد كوداً، نستخدم المعالج القديم
+        return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
+
+    # إذا لم نجد كوداً، نستخدم المعالج القديم (للمنتجات العادية)
     old_result = default_processor(text, msg_date, current_num, source_id)
     if not old_result:
         return old_result
@@ -917,12 +931,12 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.4.5 (Aysel: keep full description, remove price lines only) Ready!"
+    return "Retail Pro Bot v3.4.7 (Removed C translation from general dict) Ready!"
 
 async def start_bot():
     global channel_counters
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.4.5 يبدأ...")
+    print("🚀 Retail Pro Bot v3.4.7 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
