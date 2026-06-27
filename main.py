@@ -2,6 +2,7 @@ import os
 import re
 import asyncio
 import json
+import sqlite3
 import traceback
 from datetime import datetime, timezone, timedelta
 from pyrogram import Client, filters, idle
@@ -17,11 +18,10 @@ API_HASH = os.environ.get("API_HASH")
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
 
 RETAIL_CHANNEL = "@girlsfashionesta"
-DB_FILE = "processed_msgs.txt"
+DB_FILE = "processed_msgs.db"
 COUNTERS_FILE = "counters.json"
 
 CAIRO_OFFSET = int(os.environ.get("TIMEZONE_OFFSET", "3"))
-
 SCREENSHOT_RATIO = 1.8
 
 WORDS_TO_REMOVE = ["SASA", "sasa", "PRIBORE", "Women Accessories"]
@@ -46,12 +46,13 @@ BLOCK_KEYWORDS = [
     "Aysel Store ✨♥️\nلينكات قنوات التليجرام 👇\n1-لينك قناة التوك https://t.me/ayselstore258\n2- لينك قناة الاكسسوار https://t.me/ayselstore55\n\n4- لينك قناة الشرابات https://t.me/+SzAH0Jb0JrnOjO32\n5- لينك قناة المنزلى https://t.me/ayselstore4\n6 -  لينك قناة الميكب https://t.me/ayselmakeup98\nلينك جروب التليجرام https://t.me/ayselstore98\n\n-  العنوان 6 ابراهيم مصطفى متفرع من المدينه المنوره النزهه الجديده القاهره \n! اللوكيشن \nhttps://maps.google.com/?q=30.127422,31.376827"
 ]
 
+# قاموس الترجمة العام (بدون C)
 P_CODE_TRANSLATION = {
     "A": "انسيال",
     "K": "خلخال",
     "N": "سلسلة",
     "CP": "كوليه",
-    # "C": "كوليه",  # تم إزالة الترجمة العامة للحرف C
+    # "C": "كوليه",  # تم إزالتها من القاموس العام
     "E": "حلق",
     "R": "خاتم",
     "B": "اسورة"
@@ -115,7 +116,7 @@ SOURCE_CHANNELS = [int(ch) if ch.startswith("-") else ch for ch in raw_channels]
 RETAIL_MAPPING = { 15: 45, 20: 50, 25: 55, 30: 60, 35: 65, 40: 70, 45: 75, 50: 80, 55: 85, 60: 90, 65: 95, 70: 100, 75: 105, 80: 115, 85: 120, 90: 130, 95: 135, 100: 140, 105: 150, 110: 155, 115: 165, 120: 170, 125: 175, 130: 185, 135: 190, 140: 200, 145: 205, 150: 210, 155: 220, 160: 225, 165: 235, 170: 240, 175: 245, 180: 255, 185: 260, 190: 270, 195: 275, 200: 280, 205: 290, 210: 295, 215: 305, 220: 310, 225: 315, 230: 325, 235: 330, 240: 340, 245: 345, 250: 350, 255: 360, 260: 365, 265: 375, 270: 380, 275: 385, 280: 395, 285: 400, 290: 410, 295: 415, 300: 420, 305: 430, 310: 435, 315: 445, 320: 450, 325: 455, 330: 465, 335: 470, 340: 480, 345: 485, 350: 490, 355: 500, 360: 505, 365: 515, 370: 520, 375: 525, 380: 535, 385: 540, 390: 550, 395: 555, 400: 560, 405: 570, 410: 575, 415: 585, 420: 590, 425: 595, 430: 605, 435: 610, 440: 620, 445: 625, 450: 630, 455: 640, 460: 645, 465: 655, 470: 660, 475: 665, 480: 675, 485: 680, 490: 690, 495: 695, 500: 700, 505: 710, 510: 715, 515: 725, 520: 730, 525: 735, 530: 745, 535: 750, 540: 760, 545: 765, 550: 770, 555: 780, 560: 785, 565: 795, 570: 800, 575: 805, 580: 815, 585: 820, 590: 830, 595: 835, 600: 840, 605: 850, 610: 855, 615: 865, 620: 870, 625: 875, 630: 885, 635: 890, 640: 900, 645: 905, 650: 910, 655: 920, 660: 925, 665: 935, 670: 940, 675: 945, 680: 955, 685: 960, 690: 970, 695: 975, 700: 980, 705: 990, 710: 995, 715: 1005, 720: 1010, 725: 1015, 730: 1025, 735: 1030, 740: 1040, 745: 1045, 750: 1050, 755: 1060, 760: 1065, 765: 1075, 770: 1080, 775: 1085, 780: 1095, 785: 1100, 790: 1110, 795: 1115, 800: 1120, 805: 1130, 810: 1135, 815: 1145, 820: 1150, 825: 1155, 830: 1165, 835: 1170, 840: 1180, 845: 1185, 850: 1190, 855: 1200, 860: 1205, 865: 1215, 870: 1220, 875: 1225, 880: 1235, 885: 1240, 890: 1250, 895: 1255, 900: 1260, 905: 1270, 910: 1275, 915: 1285, 920: 1290, 925: 1295, 930: 1305, 935: 1310, 940: 1320, 945: 1325, 950: 1330, 955: 1340, 960: 1345, 965: 1355, 970: 1360, 975: 1365, 980: 1375, 985: 1380, 990: 1390, 995: 1395, 1000: 1400 }
 
 # ==========================================
-# 2. المساعدات
+# 2. المساعدات وقاعدة البيانات (SQLite)
 # ==========================================
 channel_counters = load_counters()
 SUPPLIER_PREFIX_MAP = {
@@ -124,6 +125,40 @@ SUPPLIER_PREFIX_MAP = {
     -1001682055192: "H", -1001443297771: "P"
 }
 
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS processed_msgs (msg_key TEXT PRIMARY KEY)''')
+    conn.commit()
+    conn.close()
+
+def is_msg_processed(msg_id, source_id):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT 1 FROM processed_msgs WHERE msg_key=?", (f"{source_id}:{msg_id}",))
+    result = c.fetchone() is not None
+    conn.close()
+    return result
+
+def mark_msg_as_processed(msg_id, source_id):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    try:
+        c.execute("INSERT OR IGNORE INTO processed_msgs (msg_key) VALUES (?)", (f"{source_id}:{msg_id}",))
+        conn.commit()
+    except Exception as e:
+        print(f"DB Error: {e}")
+    finally:
+        conn.close()
+
+def generate_code(source_id, msg_date, current_num):
+    """دالة مساعدة لتوليد الكود وتقليل تكرار الكود (DRY Principle)"""
+    cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
+    msg_date_cairo = msg_date.astimezone(cairo_tz)
+    today_str = msg_date_cairo.strftime("%d%m")
+    prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
+    return f"{prefix}{current_num:02d}{today_str}"
+
 def is_screenshot(photo):
     if not photo: return False
     try:
@@ -131,16 +166,6 @@ def is_screenshot(photo):
         return ratio > SCREENSHOT_RATIO
     except:
         return False
-
-def is_msg_processed(msg_id, source_id):
-    if not os.path.exists(DB_FILE): return False
-    search_key = f"{source_id}:{msg_id}"
-    with open(DB_FILE, "r") as f:
-        return search_key in f.read().splitlines()
-
-def mark_msg_as_processed(msg_id, source_id):
-    with open(DB_FILE, "a") as f:
-        f.write(f"{source_id}:{msg_id}\n")
 
 def extract_real_price(text):
     if not text: return None
@@ -413,12 +438,7 @@ def build_text_original(original_text, source_id, msg_date, current_num):
         item_name = P_CODE_TRANSLATION[original_code_prefix]
         description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
 
-    cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
-    msg_date_cairo = msg_date.astimezone(cairo_tz)
-    today_str = msg_date_cairo.strftime("%d%m")
-    
-    prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
-    my_code = f"{prefix}{current_num:02d}{today_str}"
+    my_code = generate_code(source_id, msg_date, current_num)
 
     parts = [description]
     
@@ -438,68 +458,38 @@ def build_text_original(original_text, source_id, msg_date, current_num):
 # ==========================================
 
 def default_processor(text, msg_date, current_num, source_id):
-    """المعالج الافتراضي - يستخدم نفس منطق build_text_original"""
     return build_text_original(text, source_id, msg_date, current_num)
 
-def extract_price_from_line(line):
-    """مساعد: استخراج أول رقم من سطر"""
-    match = re.search(r'(\d+)', line)
-    return int(match.group(1)) if match else None
-
 def sasa_processor(text, msg_date, current_num, source_id):
-    """
-    معالج خاص لمكتب sasaaccessories:
-    - يمنع نسخ أي نص يحتوي على رابط.
-    - يدعم الأخطاء الإملائية في كلمة 'اونلاين' (مثل 'اونلابن'، 'اون لاين').
-    - يتجاهل جميع أسطر الأسعار (جمله وأونلاين بأي تهجئة) من الوصف النهائي.
-    - يستخرج السعر من سطر الأونلاين ويستخدمه لتطبيق جدول التجزئة.
-    - يعود للكود القديم إذا لم يجد نمطاً خاصاً.
-    """
-    if not text:
-        return ""
-
-    if re.search(r'https?://', text, re.IGNORECASE):
-        return None
+    if not text: return ""
+    if re.search(r'https?://', text, re.IGNORECASE): return None
 
     old_result = default_processor(text, msg_date, current_num, source_id)
-
     lines = [line.strip() for line in text.split('\n') if line.strip()]
-    if len(lines) < 3:
-        return old_result
+    if len(lines) < 3: return old_result
 
     has_jomla = any(re.search(r'جمله\s*\d+', line, re.IGNORECASE) for line in lines)
     has_online = any(re.search(r'اونل\S*', line, re.IGNORECASE) for line in lines)
 
-    if not has_jomla or not has_online:
-        return old_result
+    if not has_jomla or not has_online: return old_result
 
     online_price = None
     for line in lines:
         if re.search(r'اونل\S*', line, re.IGNORECASE):
             match = re.search(r'(\d+)', line)
-            if match:
-                online_price = int(match.group(1))
+            if match: online_price = int(match.group(1))
             break
 
-    if online_price is None:
-        return old_result
+    if online_price is None: return old_result
 
     clean_lines = []
     for line in lines:
-        if re.search(r'جمله\s*\d+', line, re.IGNORECASE):
-            continue
-        if re.search(r'اونل\S*', line, re.IGNORECASE):
-            continue
+        if re.search(r'جمله\s*\d+', line, re.IGNORECASE): continue
+        if re.search(r'اونل\S*', line, re.IGNORECASE): continue
         clean_lines.append(line)
 
     description = "\n".join(clean_lines).strip()
-
-    cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
-    msg_date_cairo = msg_date.astimezone(cairo_tz)
-    today_str = msg_date_cairo.strftime("%d%m")
-    prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
-    my_code = f"{prefix}{current_num:02d}{today_str}"
-
+    my_code = generate_code(source_id, msg_date, current_num)
     retail_price = RETAIL_MAPPING.get(online_price, online_price)
     price_ar = convert_to_arabic_numbers(retail_price)
 
@@ -509,42 +499,24 @@ def sasa_processor(text, msg_date, current_num, source_id):
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 def aysel_processor(text, msg_date, current_num, source_id):
-    """
-    معالج خاص لمكتب ayselstore55:
-    - يمنع نسخ أي نص يحتوي على رابط.
-    - يحتفظ بالوصف الكامل (بما في ذلك الأرقام في منتصف النص).
-    - يحذف فقط أسطر الأسعار والأكواد مثل B-011.
-    """
-    if not text:
-        return ""
-
-    if re.search(r'https?://', text, re.IGNORECASE):
-        return None
+    if not text: return ""
+    if re.search(r'https?://', text, re.IGNORECASE): return None
 
     old_result = default_processor(text, msg_date, current_num, source_id)
-
     lines = [line.strip() for line in text.split('\n') if line.strip()]
-    if len(lines) < 1:
-        return old_result
+    if len(lines) < 1: return old_result
 
-    # نبحث عن أسطر تنتهي بأرقام (أسعار) أو أكواد مثل B-011
     price_lines = []
     description_lines = []
     for line in lines:
-        # تجاهل الأكواد مثل B-011
-        if re.match(r'^[A-Za-z]+-\d+$', line):
-            continue
-        # إذا كان السطر ينتهي برقم (مع أو بدون رموز) نعتبره سعراً
+        if re.match(r'^[A-Za-z]+-\d+$', line): continue
         if re.search(r'\d+\s*[^\d]*$', line):
             price_lines.append(line)
         else:
             description_lines.append(line)
 
-    # إذا لم نجد أي أسطر أسعار، نعود للكود القديم
-    if not price_lines:
-        return old_result
+    if not price_lines: return old_result
 
-    # استخراج السعر من أول سطر سعر (أو آخر سعر)
     price = None
     for pline in price_lines:
         match = re.search(r'(\d+)', pline)
@@ -552,16 +524,9 @@ def aysel_processor(text, msg_date, current_num, source_id):
             price = int(match.group(1))
             break
 
-    if price is None:
-        return old_result
+    if price is None: return old_result
 
-    # توليد الكود
-    cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
-    msg_date_cairo = msg_date.astimezone(cairo_tz)
-    today_str = msg_date_cairo.strftime("%d%m")
-    prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
-    my_code = f"{prefix}{current_num:02d}{today_str}"
-
+    my_code = generate_code(source_id, msg_date, current_num)
     retail_price = RETAIL_MAPPING.get(price, price)
     price_ar = convert_to_arabic_numbers(retail_price)
 
@@ -572,52 +537,29 @@ def aysel_processor(text, msg_date, current_num, source_id):
         return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 def ayman_processor(text, msg_date, current_num, source_id):
-    """
-    معالج خاص لقناة aymanelawamy123:
-    - يمنع نسخ أي نص يحتوي على رابط.
-    - يستخدم الكود القديم كأساس.
-    - يبحث عن سعر 'اونلاين' أو 'اون لاين' (يتجاهل سعر الدسته/الدستة).
-    - إذا وجد السعر، يستخدمه ويطبق جدول التجزئة.
-    - إذا لم يجد، يعيد الناتج القديم.
-    """
-    if not text:
-        return ""
-
-    if re.search(r'https?://', text, re.IGNORECASE):
-        return None
+    if not text: return ""
+    if re.search(r'https?://', text, re.IGNORECASE): return None
 
     old_result = default_processor(text, msg_date, current_num, source_id)
-
     lines = [line.strip() for line in text.split('\n') if line.strip()]
-    if len(lines) < 1:
-        return old_result
+    if len(lines) < 1: return old_result
 
     online_price = None
     description_lines = []
 
     for line in lines:
-        if re.search(r'دسته|دستة', line, re.IGNORECASE):
-            continue
-
+        if re.search(r'دسته|دستة', line, re.IGNORECASE): continue
         if re.search(r'اونلاين|اون لاين', line, re.IGNORECASE):
             match = re.search(r'(\d+)', line)
-            if match:
-                online_price = int(match.group(1))
+            if match: online_price = int(match.group(1))
             continue
-
         description_lines.append(line)
 
-    if online_price is None:
-        return old_result
+    if online_price is None: return old_result
 
+    my_code = generate_code(source_id, msg_date, current_num)
     retail_price = RETAIL_MAPPING.get(online_price, online_price)
     price_ar = convert_to_arabic_numbers(retail_price)
-
-    cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
-    msg_date_cairo = msg_date.astimezone(cairo_tz)
-    today_str = msg_date_cairo.strftime("%d%m")
-    prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
-    my_code = f"{prefix}{current_num:02d}{today_str}"
 
     description = "\n".join(description_lines).strip()
     if not description:
@@ -626,40 +568,22 @@ def ayman_processor(text, msg_date, current_num, source_id):
         return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 def organizer_processor(text, msg_date, current_num, source_id):
-    """
-    معالج خاص للمكتب -1001443297771 (منظم الاكسسوارات):
-    - يمنع نسخ أي نص يحتوي على رابط.
-    - يدعم الأكواد مثل R1555 price 35 (يترجم الحرف الأول من الكود).
-    - قاعدة خاصة: حرف C يُترجم إلى "سلسلة نظارة" (فقط في هذه القناة).
-    - الحرف CP يُترجم إلى "كوليه" (من القاموس العام).
-    - يحذف جميع أسطر الأسعار (price, سعر الطابلوه, سعر القطعه, إلخ).
-    - يستخدم السعر من سطر price أو آخر رقم في النص.
-    - يعتمد على الكود القديم للحالات الأخرى.
-    """
-    if not text:
-        return ""
+    if not text: return ""
+    if re.search(r'https?://', text, re.IGNORECASE): return None
 
-    if re.search(r'https?://', text, re.IGNORECASE):
-        return None
-
-    # البحث عن كود مثل R1555, C1234, CP1555
     code_match = re.search(r'([A-Z]+)\s*\d+', text, re.IGNORECASE)
     if code_match:
         prefix_letter = code_match.group(1).upper()
-        
         # قاعدة خاصة لهذه القناة: الحرف C بمفرده = سلسلة نظارة
         if prefix_letter == "C":
             item_name = "سلسلة نظارة"
-        # الحروف الأخرى (مثل R, A, CP) من القاموس العام
         elif prefix_letter in P_CODE_TRANSLATION:
             item_name = P_CODE_TRANSLATION[prefix_letter]
         else:
-            item_name = prefix_letter  # احتياطي
+            item_name = prefix_letter
 
-        # بناء الوصف الأساسي
         description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
 
-        # استخراج السعر (من سطر price أو آخر رقم)
         price = None
         price_match = re.search(r'price\s*(\d+)', text, re.IGNORECASE)
         if price_match:
@@ -672,66 +596,41 @@ def organizer_processor(text, msg_date, current_num, source_id):
                     if 15 <= val <= 2000:
                         price = val
                         break
-                if price is None:
-                    price = int(numbers[-1]) if numbers else None
+                if price is None and numbers:
+                    price = int(numbers[-1])
 
         if price is None:
             return default_processor(text, msg_date, current_num, source_id)
 
+        my_code = generate_code(source_id, msg_date, current_num)
         retail_price = RETAIL_MAPPING.get(price, price)
         price_ar = convert_to_arabic_numbers(retail_price)
 
-        # توليد الكود
-        cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
-        msg_date_cairo = msg_date.astimezone(cairo_tz)
-        today_str = msg_date_cairo.strftime("%d%m")
-        prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
-        my_code = f"{prefix}{current_num:02d}{today_str}"
-
         return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
-    # إذا لم نجد كوداً، نستخدم المعالج القديم (للمنتجات العادية)
     old_result = default_processor(text, msg_date, current_num, source_id)
-    if not old_result:
-        return old_result
+    if not old_result: return old_result
 
     lines = old_result.split('\n')
     clean_lines = []
 
     for line in lines:
         line_stripped = line.strip()
-        if not line_stripped:
-            continue
-        if re.search(r'ب\s*\d+', line_stripped, re.IGNORECASE):
-            continue
-        if re.search(r'price\s*\d+', line_stripped, re.IGNORECASE):
-            continue
-        if re.match(r'^\d+\s*$', line_stripped):
-            continue
+        if not line_stripped: continue
+        if re.search(r'ب\s*\d+', line_stripped, re.IGNORECASE): continue
+        if re.search(r'price\s*\d+', line_stripped, re.IGNORECASE): continue
+        if re.match(r'^\d+\s*$', line_stripped): continue
         clean_lines.append(line)
 
-    if not clean_lines:
-        return old_result
-
+    if not clean_lines: return old_result
     return "\n".join(clean_lines)
 
 def channel_i_processor(text, msg_date, current_num, source_id):
-    """
-    معالج خاص للقناة -1001448553593 (البادئة I):
-    - يمنع نسخ أي نص يحتوي على رابط.
-    - يستخدم الكود القديم (default_processor) كأساس للحصول على الوصف الأساسي والترجمة.
-    - إذا وجد أسطراً تحتوي على "ب" + رقم + "ج" (منتجات متعددة)، يستخرج الأسعار الفردية ويضيفها كنقاط منفصلة.
-    - إذا لم يجد نمطاً خاصاً، يعيد ناتج الكود القديم.
-    """
-    if not text:
-        return ""
-
-    if re.search(r'https?://', text, re.IGNORECASE):
-        return None
+    if not text: return ""
+    if re.search(r'https?://', text, re.IGNORECASE): return None
 
     old_result = default_processor(text, msg_date, current_num, source_id)
-    if not old_result:
-        return old_result
+    if not old_result: return old_result
 
     original_lines = [line.strip() for line in text.split('\n') if line.strip()]
     price_pattern = re.compile(r'(.*?)\s*ب\s*(\d+)\s*ج')
@@ -748,8 +647,7 @@ def channel_i_processor(text, msg_date, current_num, source_id):
         else:
             description_lines.append(line)
 
-    if len(products) < 2:
-        return old_result
+    if len(products) < 2: return old_result
 
     description_text = "\n".join(description_lines)
     description_text = re.sub(r'(?<![a-zA-Z])(?:infiniyu|infinity)(?![a-zA-Z])', 'فاشونيستا', description_text, flags=re.IGNORECASE)
@@ -761,12 +659,7 @@ def channel_i_processor(text, msg_date, current_num, source_id):
     for word in WORDS_TO_REMOVE:
         description_text = re.sub(rf'\b{word}\b', '', description_text, flags=re.IGNORECASE)
 
-    cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
-    msg_date_cairo = msg_date.astimezone(cairo_tz)
-    today_str = msg_date_cairo.strftime("%d%m")
-    prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
-    my_code = f"{prefix}{current_num:02d}{today_str}"
-
+    my_code = generate_code(source_id, msg_date, current_num)
     result_lines = [description_text, f"الكود : 🔖 {my_code}"]
     for name, price in products:
         retail_price = RETAIL_MAPPING.get(price, price)
@@ -775,9 +668,6 @@ def channel_i_processor(text, msg_date, current_num, source_id):
 
     return "\n".join(result_lines)
 
-# ==========================================
-# ربط كل مصدر بالمعالج الخاص به
-# ==========================================
 PROCESSOR_MAP = {
     "sasaaccessories": sasa_processor,
     "ayselstore55": aysel_processor,
@@ -860,16 +750,17 @@ async def safe_send(client, messages, source_id):
         mark_msg_as_processed(messages[0].id, source_id)
         await asyncio.sleep(3)
     except FloodWait as e:
+        print(f"FloodWait: Sleeping for {e.value} seconds")
         await asyncio.sleep(e.value)
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Error in safe_send: {e}")
 
 async def fetch_history(client):
     print(f"🚀 Scanning history...")
     for channel in SOURCE_CHANNELS:
         all_items, group_processed = [], set()
         count = 0
-        async for msg in client.get_chat_history(channel, limit=10000):
+        async for msg in client.get_chat_history(channel, limit=3000):
             m_date = msg.date.replace(tzinfo=timezone.utc)
             count += 1
             if count % 200 == 0:
@@ -883,7 +774,8 @@ async def fetch_history(client):
                 group_processed.add(msg.media_group_id)
                 try:
                     group = await client.get_media_group(channel, msg.id)
-                except:
+                except Exception as e:
+                    print(f"⚠️ Error getting media group: {e}")
                     continue
                 all_items.append(group)
             else:
@@ -921,8 +813,8 @@ async def main_handler(client, message):
         try:
             msgs = await client.get_media_group(message.chat.id, message.id)
             await safe_send(client, msgs, source)
-        except:
-            pass
+        except Exception as e:
+            print(f"⚠️ Error in handler media group: {e}")
         finally:
             client._recent_groups.discard(message.media_group_id)
     else:
@@ -931,12 +823,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.4.7 (Removed C translation from general dict) Ready!"
+    return "Retail Pro Bot v3.4.8 (C translation moved to organizer_processor) Ready!"
 
 async def start_bot():
     global channel_counters
+    init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.4.7 يبدأ...")
+    print("🚀 Retail Pro Bot v3.4.8 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
