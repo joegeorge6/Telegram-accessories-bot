@@ -461,6 +461,11 @@ def default_processor(text, msg_date, current_num, source_id):
     return build_text_original(text, source_id, msg_date, current_num)
 
 def sasa_processor(text, msg_date, current_num, source_id):
+    """
+    معالج خاص لقناة sasaaccessories:
+    - يدعم حالة وجود 'جمله' فقط (بدون أونلاين).
+    - يستخرج سعر الجمله ويستخدمه، مع حذف جميع أسطر الأسعار.
+    """
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
@@ -471,26 +476,49 @@ def sasa_processor(text, msg_date, current_num, source_id):
     has_jomla = any(re.search(r'جمله\s*\d+', line, re.IGNORECASE) for line in lines)
     has_online = any(re.search(r'اونل\S*', line, re.IGNORECASE) for line in lines)
 
-    if not has_jomla or not has_online: return old_result
-
-    online_price = None
-    for line in lines:
-        if re.search(r'اونل\S*', line, re.IGNORECASE):
-            match = re.search(r'(\d+)', line)
-            if match: online_price = int(match.group(1))
-            break
-
-    if online_price is None: return old_result
-
-    clean_lines = []
-    for line in lines:
-        if re.search(r'جمله\s*\d+', line, re.IGNORECASE): continue
-        if re.search(r'اونل\S*', line, re.IGNORECASE): continue
-        clean_lines.append(line)
+    # حالة وجود أونلاين (الأولوية للأونلاين)
+    if has_online:
+        online_price = None
+        for line in lines:
+            if re.search(r'اونل\S*', line, re.IGNORECASE):
+                match = re.search(r'(\d+)', line)
+                if match: online_price = int(match.group(1))
+                break
+        if online_price is None:
+            return old_result
+        price_to_use = online_price
+        # حذف أسطر الجمله والأونلاين
+        clean_lines = []
+        for line in lines:
+            if re.search(r'جمله\s*\d+', line, re.IGNORECASE): continue
+            if re.search(r'اونل\S*', line, re.IGNORECASE): continue
+            clean_lines.append(line)
+    elif has_jomla:
+        # حالة وجود جملة فقط
+        jomla_price = None
+        for line in lines:
+            match = re.search(r'جمله\s*(\d+)', line, re.IGNORECASE)
+            if match:
+                jomla_price = int(match.group(1))
+                break
+        if jomla_price is None:
+            return old_result
+        price_to_use = jomla_price
+        # حذف كل الأسطر التي تحتوي على أسعار (جمله، يعني القطعه، القطعه ب، إلخ)
+        clean_lines = []
+        for line in lines:
+            if re.search(r'جمله\s*\d+', line, re.IGNORECASE): continue
+            if re.search(r'يعني القطعه\s*ب\s*\d+', line, re.IGNORECASE): continue
+            if re.search(r'القطعه\s*ب\s*\d+', line, re.IGNORECASE): continue
+            if re.search(r'يعني القطعة\s*ب\s*\d+', line, re.IGNORECASE): continue
+            if re.search(r'القطعة\s*ب\s*\d+', line, re.IGNORECASE): continue
+            clean_lines.append(line)
+    else:
+        return old_result
 
     description = "\n".join(clean_lines).strip()
     my_code = generate_code(source_id, msg_date, current_num)
-    retail_price = RETAIL_MAPPING.get(online_price, online_price)
+    retail_price = RETAIL_MAPPING.get(price_to_use, price_to_use)
     price_ar = convert_to_arabic_numbers(retail_price)
 
     if description:
@@ -823,13 +851,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.4.8 (C translation moved to organizer_processor) Ready!"
+    return "Retail Pro Bot v3.4.9 (Sasa: support jomla only) Ready!"
 
 async def start_bot():
     global channel_counters
     init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.4.8 يبدأ...")
+    print("🚀 Retail Pro Bot v3.4.9 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
