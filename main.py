@@ -46,13 +46,11 @@ BLOCK_KEYWORDS = [
     "Aysel Store ✨♥️\nلينكات قنوات التليجرام 👇\n1-لينك قناة التوك https://t.me/ayselstore258\n2- لينك قناة الاكسسوار https://t.me/ayselstore55\n\n4- لينك قناة الشرابات https://t.me/+SzAH0Jb0JrnOjO32\n5- لينك قناة المنزلى https://t.me/ayselstore4\n6 -  لينك قناة الميكب https://t.me/ayselmakeup98\nلينك جروب التليجرام https://t.me/ayselstore98\n\n-  العنوان 6 ابراهيم مصطفى متفرع من المدينه المنوره النزهه الجديده القاهره \n! اللوكيشن \nhttps://maps.google.com/?q=30.127422,31.376827"
 ]
 
-# قاموس الترجمة العام (بدون C)
 P_CODE_TRANSLATION = {
     "A": "انسيال",
     "K": "خلخال",
     "N": "سلسلة",
     "CP": "كوليه",
-    # "C": "كوليه",  # تم إزالتها من القاموس العام
     "E": "حلق",
     "R": "خاتم",
     "B": "اسورة"
@@ -152,7 +150,6 @@ def mark_msg_as_processed(msg_id, source_id):
         conn.close()
 
 def generate_code(source_id, msg_date, current_num):
-    """دالة مساعدة لتوليد الكود وتقليل تكرار الكود (DRY Principle)"""
     cairo_tz = timezone(timedelta(hours=CAIRO_OFFSET))
     msg_date_cairo = msg_date.astimezone(cairo_tz)
     today_str = msg_date_cairo.strftime("%d%m")
@@ -198,23 +195,7 @@ def is_emoji_only(text):
     if not cleaned:
         return False
     emoji_pattern = re.compile(
-        "[\U0001F300-\U0001F5FF"
-        "\U0001F600-\U0001F64F"
-        "\U0001F680-\U0001F6FF"
-        "\U0001F1E0-\U0001F1FF"
-        "\U00002702-\U000027B0"
-        "\U000024C2-\U0001F251"
-        "\U0001F900-\U0001F9FF"
-        "\U0001FA00-\U0001FA6F"
-        "\U0001FA70-\U0001FAFF"
-        "\U00002600-\U000026FF"
-        "\U0000FE00-\U0000FE0F"
-        "\U0000200D"
-        "\U00002B50"
-        "\U00002764"
-        "\U0001F004"
-        "\U0001F0CF"
-        "]+", flags=re.UNICODE)
+        "[\U0001F300-\U0001F5FF\U0001F600-\U0001F64F\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\U00002702-\U000027B0\U000024C2-\U0001F251\U0001F900-\U0001F9FF\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF\U00002600-\U000026FF\U0000FE00-\U0000FE0F\U0000200D\U00002B50\U00002764\U0001F004\U0001F0CF]+", flags=re.UNICODE)
     return bool(emoji_pattern.fullmatch(cleaned))
 
 def is_number_emoji_line(line):
@@ -461,11 +442,6 @@ def default_processor(text, msg_date, current_num, source_id):
     return build_text_original(text, source_id, msg_date, current_num)
 
 def sasa_processor(text, msg_date, current_num, source_id):
-    """
-    معالج خاص لقناة sasaaccessories:
-    - يدعم حالة وجود 'جمله' فقط (بدون أونلاين).
-    - يستخرج سعر الجمله ويستخدمه، مع حذف جميع أسطر الأسعار.
-    """
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
@@ -476,7 +452,6 @@ def sasa_processor(text, msg_date, current_num, source_id):
     has_jomla = any(re.search(r'جمله\s*\d+', line, re.IGNORECASE) for line in lines)
     has_online = any(re.search(r'اونل\S*', line, re.IGNORECASE) for line in lines)
 
-    # حالة وجود أونلاين (الأولوية للأونلاين)
     if has_online:
         online_price = None
         for line in lines:
@@ -487,14 +462,12 @@ def sasa_processor(text, msg_date, current_num, source_id):
         if online_price is None:
             return old_result
         price_to_use = online_price
-        # حذف أسطر الجمله والأونلاين
         clean_lines = []
         for line in lines:
             if re.search(r'جمله\s*\d+', line, re.IGNORECASE): continue
             if re.search(r'اونل\S*', line, re.IGNORECASE): continue
             clean_lines.append(line)
     elif has_jomla:
-        # حالة وجود جملة فقط
         jomla_price = None
         for line in lines:
             match = re.search(r'جمله\s*(\d+)', line, re.IGNORECASE)
@@ -504,7 +477,6 @@ def sasa_processor(text, msg_date, current_num, source_id):
         if jomla_price is None:
             return old_result
         price_to_use = jomla_price
-        # حذف كل الأسطر التي تحتوي على أسعار (جمله، يعني القطعه، القطعه ب، إلخ)
         clean_lines = []
         for line in lines:
             if re.search(r'جمله\s*\d+', line, re.IGNORECASE): continue
@@ -527,38 +499,138 @@ def sasa_processor(text, msg_date, current_num, source_id):
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 def aysel_processor(text, msg_date, current_num, source_id):
+    """
+    معالج خاص لقناة ayselstore55:
+    - تحويل ستالس → استانلس، وإزالة ختم AS.
+    - أولوية قصوى للخيارات المتعددة (سعر السلسله، سعر الانسيال، سعر السلفر، سعر الجولد، سعر السلسلة، سعر القطعه).
+    - إذا وُجدت خيارات متعددة، يتم عرض كل سعر مع وصفه، وتجاهل أي سعر إضافي.
+    - وإلا، يبحث عن سعر واحد (باستخدام كلمات مفتاحية: سعر, جمله, اونلاين, اون لاين, price, ب, عرض (بشرط ألا يسبقها رقم)).
+    - يحذف سطر السعر بالكامل، ويحتفظ بباقي الوصف.
+    - يضيف الكود والسعر المحول.
+    """
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
+    # منع النصوص المحظورة
+    norm_text = normalize_numbers(text)
+    if any(word in norm_text for word in BLOCK_KEYWORDS):
+        return None
+
+    # تحويل الكلمات
+    text = re.sub(r'(?:استالس|ستالس|استانليس)', 'استانلس', text, flags=re.IGNORECASE)
+    text = re.sub(r'ختم\s*AS', '', text, flags=re.IGNORECASE)
+
     old_result = default_processor(text, msg_date, current_num, source_id)
     lines = [line.strip() for line in text.split('\n') if line.strip()]
-    if len(lines) < 1: return old_result
+    if len(lines) < 1:
+        return old_result
 
-    price_lines = []
+    # ============================================================
+    # 1. فحص الخيارات المتعددة (أولوية قصوى)
+    # ============================================================
+    multi_patterns = [
+        'سعر السلسله', 'سعر السلسلة', 'سعر الانسيال',
+        'سعر السلفر', 'سعر الجولد', 'سعر القطعه', 'سعر القطعة'
+    ]
+    multi_items = []
     description_lines = []
+    price_lines_to_remove = []
+
+    # أولاً: جمع جميع الأسطر التي تحتوي على خيارات متعددة
     for line in lines:
-        if re.match(r'^[A-Za-z]+-\d+$', line): continue
-        if re.search(r'\d+\s*[^\d]*$', line):
-            price_lines.append(line)
-        else:
+        if re.match(r'^[A-Za-z]+-\d+$', line):
+            continue
+        is_multi = False
+        for pattern in multi_patterns:
+            if pattern in line:
+                # استخراج اسم المنتج (النص قبل "سعر")
+                # نأخذ الجزء قبل "سعر" (قد يكون هناك كلمات قبلها)
+                product_name = re.split(r'سعر', line, flags=re.IGNORECASE)[0].strip()
+                if not product_name:
+                    # إذا لم يتبقى اسم، نستخدم النص كاملاً بدون السعر
+                    product_name = line
+                # استخراج السعر
+                price_match = re.search(r'(\d+)', line)
+                if price_match:
+                    price = int(price_match.group(1))
+                    multi_items.append((product_name, price))
+                    price_lines_to_remove.append(line)
+                    is_multi = True
+                    break
+        if not is_multi:
             description_lines.append(line)
 
-    if not price_lines: return old_result
+    # إذا وجدنا أكثر من خيار، نعتبرهم خيارات متعددة
+    if len(multi_items) > 1:
+        # تنظيف الوصف: إزالة أي سطر يحتوي على أرقام (أسعار إضافية مثل "عرض الاتنين 85")
+        clean_description = []
+        for line in description_lines:
+            # نتجاهل الأسطر التي تحتوي على أرقام (قد تكون أسعاراً إضافية)
+            if re.search(r'\d', line):
+                continue
+            clean_description.append(line)
+        description = "\n".join(clean_description).strip()
+        my_code = generate_code(source_id, msg_date, current_num)
 
-    price = None
-    for pline in price_lines:
-        match = re.search(r'(\d+)', pline)
-        if match:
-            price = int(match.group(1))
-            break
+        result_lines = [description, f"الكود : 🔖 {my_code}"]
+        # ترتيب حسب الظهور أو حسب الأولوية
+        for name, price in multi_items:
+            retail = RETAIL_MAPPING.get(price, price)
+            price_ar = convert_to_arabic_numbers(retail)
+            result_lines.append(f"{name} : 💰 {price_ar} ج 🔥")
+        return "\n".join(result_lines)
 
-    if price is None: return old_result
+    # ============================================================
+    # 2. منطق السعر الواحد (إذا لم توجد خيارات متعددة)
+    # ============================================================
+    price_keywords = ['سعر', 'جمله', 'اونلاين', 'اون لاين', 'price', 'ب']
+    # نضيف 'عرض' بشرط ألا يسبقها 'رقم'
+    extracted_price = None
+    clean_desc_lines = []
+
+    for line in lines:
+        if re.match(r'^[A-Za-z]+-\d+$', line):
+            continue
+
+        is_price = False
+        clean_line = line.strip()
+
+        # التحقق من الكلمات المفتاحية الأساسية
+        for kw in price_keywords:
+            match = re.search(rf'({kw})\s*[:：]?\s*(\d+)', clean_line, re.IGNORECASE)
+            if match:
+                price = int(match.group(2))
+                if extracted_price is None:
+                    extracted_price = price
+                is_price = True
+                break
+
+        # إذا لم يجد، نتحقق من 'عرض' (بشرط ألا يسبقها 'رقم')
+        if not is_price and re.search(r'عرض', clean_line, re.IGNORECASE):
+            # نتأكد من عدم وجود كلمة 'رقم' قبلها
+            if not re.search(r'رقم\s*عرض', clean_line, re.IGNORECASE):
+                match = re.search(r'عرض\s*(\d+)', clean_line, re.IGNORECASE)
+                if match:
+                    price = int(match.group(1))
+                    if extracted_price is None:
+                        extracted_price = price
+                    is_price = True
+
+        # إذا كان السطر سعراً، لا نضيفه للوصف
+        if is_price:
+            continue
+        else:
+            clean_desc_lines.append(clean_line)
+
+    # إذا لم نجد سعراً، نعود للمعالج الافتراضي
+    if extracted_price is None:
+        return old_result
 
     my_code = generate_code(source_id, msg_date, current_num)
-    retail_price = RETAIL_MAPPING.get(price, price)
+    retail_price = RETAIL_MAPPING.get(extracted_price, extracted_price)
     price_ar = convert_to_arabic_numbers(retail_price)
 
-    description = "\n".join(description_lines).strip()
+    description = "\n".join(clean_desc_lines).strip()
     if not description:
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
     else:
@@ -602,7 +674,6 @@ def organizer_processor(text, msg_date, current_num, source_id):
     code_match = re.search(r'([A-Z]+)\s*\d+', text, re.IGNORECASE)
     if code_match:
         prefix_letter = code_match.group(1).upper()
-        # قاعدة خاصة لهذه القناة: الحرف C بمفرده = سلسلة نظارة
         if prefix_letter == "C":
             item_name = "سلسلة نظارة"
         elif prefix_letter in P_CODE_TRANSLATION:
@@ -851,13 +922,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.4.9 (Sasa: support jomla only) Ready!"
+    return "Retail Pro Bot v3.5.5 (Aysel: multi-options & single price with preserve description) Ready!"
 
 async def start_bot():
     global channel_counters
     init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.4.9 يبدأ...")
+    print("🚀 Retail Pro Bot v3.5.5 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
