@@ -46,9 +46,16 @@ BLOCK_KEYWORDS = [
     "Aysel Store ✨♥️\nلينكات قنوات التليجرام 👇\n1-لينك قناة التوك https://t.me/ayselstore258\n2- لينك قناة الاكسسوار https://t.me/ayselstore55\n\n4- لينك قناة الشرابات https://t.me/+SzAH0Jb0JrnOjO32\n5- لينك قناة المنزلى https://t.me/ayselstore4\n6 -  لينك قناة الميكب https://t.me/ayselmakeup98\nلينك جروب التليجرام https://t.me/ayselstore98\n\n-  العنوان 6 ابراهيم مصطفى متفرع من المدينه المنوره النزهه الجديده القاهره \n! اللوكيشن \nhttps://maps.google.com/?q=30.127422,31.376827"
 ]
 
+# قاموس الترجمة (تم إزالة "C": "كوليه")
 P_CODE_TRANSLATION = {
-    "A": "انسيال", "K": "خلخال", "N": "سلسلة", "CP": "كوليه",
-    "C": "كوليه", "E": "حلق", "R": "خاتم", "B": "اسورة"
+    "A": "انسيال",
+    "K": "خلخال",
+    "N": "سلسلة",
+    "CP": "كوليه",
+    # "C": "كوليه",  # تم إزالتها
+    "E": "حلق",
+    "R": "خاتم",
+    "B": "اسورة"
 }
 
 # ==========================================
@@ -63,7 +70,6 @@ def load_counters():
         except:
             return {}
 
-# تحويل دالة الحفظ لتعمل بشكل متزامن دون حظر الـ Event Loop
 def _sync_save_counter(key, value):
     counters = load_counters()
     counters[key] = value
@@ -122,7 +128,6 @@ SUPPLIER_PREFIX_MAP = {
     -1001682055192: "H", -1001443297771: "P"
 }
 
-# تحويل دوال SQLite لتعمل بشكل غير متزامن
 def _sync_init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -476,7 +481,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
     multi_patterns = ['سعر السلسله', 'سعر السلسلة', 'سعر الانسيال', 'سعر السلفر', 'سعر الجولد', 'سعر القطعه', 'سعر القطعة']
     multi_items = []
     
-    # تم إصلاح الخطأ هنا: إزالة break الخاطئة التي كانت تمنع جمع باقي الأسعار
     for line in lines:
         for pat in multi_patterns:
             if pat in line:
@@ -485,7 +489,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
                 price_match = re.search(r'(\d+)', line)
                 if price_match:
                     multi_items.append((product_name, int(price_match.group(1))))
-                    break # يكسر الحلقة الداخلية فقط ويمر للسطر التالي
+                    break
 
     if len(multi_items) > 1:
         lines_old = old_result.split('\n')
@@ -574,6 +578,7 @@ def organizer_processor(text, msg_date, current_num, source_id):
     if not code_match: return old_result
 
     prefix_letter = code_match.group(1).upper()
+    # قاعدة خاصة للقناة P: الحرف C يُترجم إلى "سلسلة نظارة"
     if prefix_letter == "C":
         item_name = "سلسلة نظارة"
     elif prefix_letter in P_CODE_TRANSLATION:
@@ -792,13 +797,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.6.1 (Async DB + Bug Fixes) Ready!"
+    return "Retail Pro Bot v3.6.2 (Removed C translation from general dict) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.6.1 يبدأ...")
+    print("🚀 Retail Pro Bot v3.6.2 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
