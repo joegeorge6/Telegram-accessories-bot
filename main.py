@@ -220,7 +220,7 @@ def is_number_emoji_line(line):
     return False
 
 # ==========================================
-# 3. المعالجة الأساسية للنص
+# 3. المعالجة الأساسية للنص (النسخة الأصلية)
 # ==========================================
 def build_text_original(original_text, source_id, msg_date, current_num):
     if not original_text: return ""
@@ -421,25 +421,41 @@ def build_text_original(original_text, source_id, msg_date, current_num):
 def default_processor(text, msg_date, current_num, source_id):
     return build_text_original(text, source_id, msg_date, current_num)
 
+def apply_general_fixes(text):
+    """تطبيق التحويلات العامة على النص (مستقل عن default_processor)"""
+    if not text: return text
+    text = re.sub(r'(?:استالس|ستالس|استانليس)', 'استانلس', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bبلاتيد\b', 'بليتد', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bزركون\b', 'زيركون', text, flags=re.IGNORECASE)
+    text = re.sub(r'ختم\s*AS', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'(?:الانسياب|انسياب)', 'الانسيال', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bسعو\b', 'سعر', text, flags=re.IGNORECASE)
+    # لا نضيف infinity → فاشونيستا هنا لأنها خاصة بقناة أخرى
+    return text
+
 def sasa_processor(text, msg_date, current_num, source_id):
-    old_result = default_processor(text, msg_date, current_num, source_id)
-    if old_result is None: return None
+    if not text: return ""
+    if re.search(r'https?://', text, re.IGNORECASE): return None
 
     lines = [line.strip() for line in text.split('\n') if line.strip()]
-    if len(lines) < 3: return old_result
+    if len(lines) < 3:
+        return default_processor(text, msg_date, current_num, source_id)
+
+    # تطبيق التحويلات العامة
+    text = apply_general_fixes(text)
 
     has_jomla = any(re.search(r'جمله\s*\d+', line, re.IGNORECASE) for line in lines)
     has_online = any(re.search(r'اونل\S*', line, re.IGNORECASE) for line in lines)
 
-    if not has_jomla or not has_online: return old_result
+    if not has_jomla or not has_online:
+        return default_processor(text, msg_date, current_num, source_id)
 
     online_price = None
     for line in lines:
         if re.search(r'اونل\S*', line, re.IGNORECASE):
             match = re.search(r'(\d+)', line)
-            if match:
-                online_price = int(match.group(1))
-                break
+            if match: online_price = int(match.group(1))
+            break
 
     if online_price is None:
         jomla_price = None
@@ -448,34 +464,44 @@ def sasa_processor(text, msg_date, current_num, source_id):
             if match:
                 jomla_price = int(match.group(1))
                 break
-        if jomla_price is None: return old_result
+        if jomla_price is None:
+            return default_processor(text, msg_date, current_num, source_id)
         price_to_use = jomla_price
     else:
         price_to_use = online_price
 
+    # بناء الوصف: نحذف الأسطر التي تحتوي على "جمله" أو "اونل"
+    clean_lines = []
+    for line in lines:
+        if re.search(r'جمله\s*\d+', line, re.IGNORECASE): continue
+        if re.search(r'اونل\S*', line, re.IGNORECASE): continue
+        clean_lines.append(line)
+
+    description = "\n".join(clean_lines).strip()
+    my_code = generate_code(source_id, msg_date, current_num)
     retail_price = RETAIL_MAPPING.get(price_to_use, price_to_use)
     price_ar = convert_to_arabic_numbers(retail_price)
 
-    lines_old = old_result.split('\n')
-    new_lines = []
-    price_replaced = False
-    for line in lines_old:
-        if re.search(r'السعر :', line) and not price_replaced:
-            new_lines.append(f"السعر : 💰 {price_ar} ج 🔥")
-            price_replaced = True
-        else:
-            new_lines.append(line)
-    if not price_replaced:
-        new_lines.append(f"السعر : 💰 {price_ar} ج 🔥")
-
-    return "\n".join(new_lines)
+    if description:
+        return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
+    else:
+        return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 def aysel_processor(text, msg_date, current_num, source_id):
-    old_result = default_processor(text, msg_date, current_num, source_id)
-    if old_result is None: return None
+    if not text: return ""
+    if re.search(r'https?://', text, re.IGNORECASE): return None
+    
+    # منع النصوص المحظورة
+    norm_text = normalize_numbers(text)
+    if any(word in norm_text for word in BLOCK_KEYWORDS):
+        return None
+
+    # تطبيق التحويلات العامة
+    text = apply_general_fixes(text)
 
     lines = [line.strip() for line in text.split('\n') if line.strip()]
-    if len(lines) < 1: return old_result
+    if len(lines) < 1:
+        return default_processor(text, msg_date, current_num, source_id)
 
     # 1. فحص الخيارات المتعددة (أولوية قصوى)
     multi_patterns = ['سعر السلسله', 'سعر السلسلة', 'سعر الانسيال', 'سعر السلفر', 'سعر الجولد', 'سعر القطعه', 'سعر القطعة']
@@ -491,22 +517,27 @@ def aysel_processor(text, msg_date, current_num, source_id):
                     break
 
     if len(multi_items) > 1:
-        lines_old = old_result.split('\n')
-        new_lines = []
-        for line in lines_old:
-            if re.search(r'السعر :', line): continue
-            new_lines.append(line)
+        description_lines = []
+        for line in lines:
+            if re.search(r'سعر', line, re.IGNORECASE): continue
+            if re.search(r'\d+', line) and any(kw in line for kw in ['عرض', 'قطعتين', 'الاتنين']):
+                continue
+            description_lines.append(line)
+        description = "\n".join(description_lines).strip()
+        my_code = generate_code(source_id, msg_date, current_num)
+        result_lines = [description, f"الكود : 🔖 {my_code}"]
         for name, price in multi_items:
             retail = RETAIL_MAPPING.get(price, price)
             price_ar = convert_to_arabic_numbers(retail)
-            new_lines.append(f"{name} : 💰 {price_ar} ج 🔥")
-        return "\n".join(new_lines)
+            result_lines.append(f"{name} : 💰 {price_ar} ج 🔥")
+        return "\n".join(result_lines)
 
     # 2. معالجة السعر الواحد
     price_keywords = ['سعر', 'جمله', 'اونلاين', 'اون لاين', 'price', 'ب']
     extracted_price = None
     target_line = None
     target_idx = -1
+    price_line_text = None  # النص الأصلي للسعر
 
     for idx, line in enumerate(lines):
         if re.match(r'^[A-Za-z]+-\d+$', line): continue
@@ -517,6 +548,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
                 extracted_price = int(match.group(2))
                 target_line = line
                 target_idx = idx
+                price_line_text = line
                 found = True
                 break
         if found: break
@@ -527,10 +559,11 @@ def aysel_processor(text, msg_date, current_num, source_id):
                 extracted_price = int(match.group(1))
                 target_line = line
                 target_idx = idx
+                price_line_text = line
                 break
 
     if extracted_price is None:
-        return old_result
+        return default_processor(text, msg_date, current_num, source_id)
 
     retail_price = RETAIL_MAPPING.get(extracted_price, extracted_price)
     price_ar = convert_to_arabic_numbers(retail_price)
@@ -543,43 +576,35 @@ def aysel_processor(text, msg_date, current_num, source_id):
         modified_line = re.sub(rf'\s*{extracted_price}\s*', '', target_line).strip()
         if not modified_line:
             modified_line = target_line
+
+    # تنظيف إضافي: إزالة كلمة "جنيه" الزائدة
+    modified_line = re.sub(r'\s*جنيه\s*', '', modified_line).strip()
     modified_line = f"{modified_line} : 💰 {price_ar} ج 🔥"
 
-    # بناء الوصف الجديد: نأخذ old_result ونحذف أي سطر سعر عام
-    old_lines = old_result.split('\n')
-    clean_old_lines = []
-    for line in old_lines:
-        if re.search(r'السعر :', line): continue  # نحذف سطر السعر العام
-        # نحذف أيضاً أي سطر يحتوي على 'فقط' لأنه قد يكون غير مرغوب
-        if re.search(r'\bفقط\b', line, re.IGNORECASE):
+    # بناء الوصف: نأخذ جميع الأسطر ما عدا سطر السعر الأصلي، ونضيف السطر المعدل
+    clean_lines = []
+    for i, line in enumerate(lines):
+        if i == target_idx:
             continue
-        clean_old_lines.append(line)
+        clean_lines.append(line)
 
-    # ندرج السطر المعدل قبل الكود
-    code_line_index = -1
-    for i, line in enumerate(clean_old_lines):
-        if 'الكود :' in line:
-            code_line_index = i
-            break
+    description = "\n".join(clean_lines).strip()
+    my_code = generate_code(source_id, msg_date, current_num)
 
-    if code_line_index != -1:
-        clean_old_lines.insert(code_line_index, modified_line)
-    else:
-        clean_old_lines.append(modified_line)
-
-    # التأكد من وجود الكود (قد يكون محذوفاً في old_result)
-    if not any('الكود :' in line for line in clean_old_lines):
-        my_code = generate_code(source_id, msg_date, current_num)
-        clean_old_lines.append(f"الكود : 🔖 {my_code}")
-
-    return "\n".join(clean_old_lines)
+    # وضع السطر المعدل قبل الكود
+    result_lines = [description, modified_line, f"الكود : 🔖 {my_code}"]
+    return "\n".join(result_lines)
 
 def ayman_processor(text, msg_date, current_num, source_id):
-    old_result = default_processor(text, msg_date, current_num, source_id)
-    if old_result is None: return None
+    if not text: return ""
+    if re.search(r'https?://', text, re.IGNORECASE): return None
 
     lines = [line.strip() for line in text.split('\n') if line.strip()]
-    if len(lines) < 1: return old_result
+    if len(lines) < 1:
+        return default_processor(text, msg_date, current_num, source_id)
+
+    # تطبيق التحويلات العامة
+    text = apply_general_fixes(text)
 
     online_price = None
     for line in lines:
@@ -590,31 +615,35 @@ def ayman_processor(text, msg_date, current_num, source_id):
                 online_price = int(match.group(1))
                 break
 
-    if online_price is None: return old_result
+    if online_price is None:
+        return default_processor(text, msg_date, current_num, source_id)
 
+    clean_lines = []
+    for line in lines:
+        if re.search(r'دسته|دستة', line, re.IGNORECASE): continue
+        if re.search(r'اونلاين|اون لاين', line, re.IGNORECASE): continue
+        clean_lines.append(line)
+
+    description = "\n".join(clean_lines).strip()
+    my_code = generate_code(source_id, msg_date, current_num)
     retail_price = RETAIL_MAPPING.get(online_price, online_price)
     price_ar = convert_to_arabic_numbers(retail_price)
 
-    lines_old = old_result.split('\n')
-    new_lines = []
-    price_replaced = False
-    for line in lines_old:
-        if re.search(r'السعر :', line) and not price_replaced:
-            new_lines.append(f"السعر : 💰 {price_ar} ج 🔥")
-            price_replaced = True
-        else:
-            new_lines.append(line)
-    if not price_replaced:
-        new_lines.append(f"السعر : 💰 {price_ar} ج 🔥")
-    return "\n".join(new_lines)
+    if description:
+        return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
+    else:
+        return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 def organizer_processor(text, msg_date, current_num, source_id):
-    old_result = default_processor(text, msg_date, current_num, source_id)
-    if old_result is None: return None
+    if not text: return ""
+    if re.search(r'https?://', text, re.IGNORECASE): return None
 
     code_match = re.search(r'([A-Z]+)\s*\d+', text, re.IGNORECASE)
-    if not code_match: return old_result
+    if not code_match:
+        return default_processor(text, msg_date, current_num, source_id)
 
+    # تطبيق التحويلات العامة
+    text = apply_general_fixes(text)
     prefix_letter = code_match.group(1).upper()
     if prefix_letter == "C":
         item_name = "سلسلة نظارة"
@@ -640,7 +669,8 @@ def organizer_processor(text, msg_date, current_num, source_id):
             if price is None and numbers:
                 price = int(numbers[-1])
 
-    if price is None: return old_result
+    if price is None:
+        return default_processor(text, msg_date, current_num, source_id)
 
     retail_price = RETAIL_MAPPING.get(price, price)
     price_ar = convert_to_arabic_numbers(retail_price)
@@ -649,10 +679,16 @@ def organizer_processor(text, msg_date, current_num, source_id):
     return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 def channel_i_processor(text, msg_date, current_num, source_id):
-    old_result = default_processor(text, msg_date, current_num, source_id)
-    if old_result is None: return None
+    if not text: return ""
+    if re.search(r'https?://', text, re.IGNORECASE): return None
 
     original_lines = [line.strip() for line in text.split('\n') if line.strip()]
+    if len(original_lines) < 2:
+        return default_processor(text, msg_date, current_num, source_id)
+
+    # تطبيق التحويلات العامة
+    text = apply_general_fixes(text)
+
     price_pattern = re.compile(r'(.*?)\s*ب\s*(\d+)\s*ج')
     products = []
     description_lines = []
@@ -667,17 +703,12 @@ def channel_i_processor(text, msg_date, current_num, source_id):
         else:
             description_lines.append(line)
 
-    if len(products) < 2: return old_result
-
+    # تحويل infinity إلى فاشونيستا في الوصف (خاص بالقناة I)
     description_text = "\n".join(description_lines)
     description_text = re.sub(r'(?<![a-zA-Z])(?:infiniyu|infinity)(?![a-zA-Z])', 'فاشونيستا', description_text, flags=re.IGNORECASE)
-    description_text = re.sub(r'(?:استالس|ستالس|استانليس)', 'استانلس', description_text, flags=re.IGNORECASE)
-    description_text = re.sub(r'(?:الانسياب|انسياب)', 'الانسيال', description_text, flags=re.IGNORECASE)
-    description_text = re.sub(r'\bبلاتيد\b', 'بليتد', description_text, flags=re.IGNORECASE)
-    description_text = re.sub(r'\bزركون\b', 'زيركون', description_text, flags=re.IGNORECASE)
-    description_text = re.sub(r'\bسعو\b', 'سعر', description_text, flags=re.IGNORECASE)
-    for word in WORDS_TO_REMOVE:
-        description_text = re.sub(rf'\b{word}\b', '', description_text, flags=re.IGNORECASE)
+
+    if len(products) < 2:
+        return default_processor(text, msg_date, current_num, source_id)
 
     my_code = generate_code(source_id, msg_date, current_num)
     result_lines = [description_text, f"الكود : 🔖 {my_code}"]
@@ -834,13 +865,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.6.3 (Aysel: keep and modify price line) Ready!"
+    return "Retail Pro Bot v3.6.5 (All processors independent, fallback to default) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.6.3 يبدأ...")
+    print("🚀 Retail Pro Bot v3.6.5 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
