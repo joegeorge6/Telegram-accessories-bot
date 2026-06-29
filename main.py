@@ -533,23 +533,12 @@ def aysel_processor(text, msg_date, current_num, source_id):
                 price_line_indices.append(idx)
                 continue
 
-        # 1.3 البحث عن "عرض" + رقم (مع الحفاظ على النص بعد الرقم)
-        match_offer = re.search(r'^(.*?)\s*عرض\s*(\d+)\s*(.*?)$', line, re.IGNORECASE)
-        if match_offer:
-            before = match_offer.group(1).strip()
-            after = match_offer.group(3).strip()
-            product_name = f"{before} {after}".strip()
-            if not product_name:
-                product_name = "العرض"
-            price = int(match_offer.group(2))
-            multi_items.append((product_name, price))
-            price_line_indices.append(idx)
-            continue
-
-        # إذا لم يكن سطر سعر، نضيفه للوصف
+        # 1.3 البحث عن "عرض" + رقم (مع الحفاظ على النص بعد الرقم) - لكن هذه الحالة لا تدخل كخيارات متعددة إلا إذا وجد أكثر من عنصر
+        # نتركها للحالة الفردية، لذا لا نضيفها هنا
+        # نضيف السطر للوصف مؤقتاً
         description_lines.append(line)
 
-    # إذا وجدنا أكثر من خيار، نعتبرهم خيارات متعددة
+    # إذا وجدنا أكثر من خيار (من "سعر" أو "ب")، نعتبرهم خيارات متعددة
     if len(multi_items) > 1:
         description = "\n".join(description_lines).strip()
         my_code = generate_code(source_id, msg_date, current_num)
@@ -570,28 +559,35 @@ def aysel_processor(text, msg_date, current_num, source_id):
     price_line_text = None
     price_keywords = ['سعر', 'جمله', 'اونلاين', 'اون لاين', 'price', 'ب']
 
+    # أولاً: البحث عن 'عرض' (بدون كلمات مفتاحية أخرى) كحالة خاصة
     for idx, line in enumerate(lines):
         if re.match(r'^[A-Za-z]+-\d+$', line): continue
-        found = False
-        for kw in price_keywords:
-            match = re.search(rf'({kw})\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
-            if match:
-                extracted_price = int(match.group(2))
-                target_line = line
-                target_idx = idx
-                price_line_text = line
-                found = True
-                break
-        if found: break
-        # البحث عن 'عرض' بشرط عدم وجود 'رقم' قبله
-        if not extracted_price and re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'رقم\s*عرض', line, re.IGNORECASE):
-            match = re.search(r'عرض\s*(\d+)\s*(.*?)$', line, re.IGNORECASE)
-            if match:
-                extracted_price = int(match.group(1))
-                target_line = line
-                target_idx = idx
-                price_line_text = line
-                break
+        if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'رقم\s*عرض', line, re.IGNORECASE):
+            # نتأكد من عدم وجود كلمة "سعر" أو "ب" في السطر (حتى لا نتعارض مع الأنماط الأخرى)
+            if not re.search(r'سعر|ب', line, re.IGNORECASE):
+                match = re.search(r'عرض\s*(\d+)\s*(.*?)$', line, re.IGNORECASE)
+                if match:
+                    extracted_price = int(match.group(1))
+                    target_line = line
+                    target_idx = idx
+                    price_line_text = line
+                    break
+
+    # إذا لم نجد عرضاً، نبحث عن الكلمات المفتاحية الأخرى
+    if extracted_price is None:
+        for idx, line in enumerate(lines):
+            if re.match(r'^[A-Za-z]+-\d+$', line): continue
+            found = False
+            for kw in price_keywords:
+                match = re.search(rf'({kw})\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
+                if match:
+                    extracted_price = int(match.group(2))
+                    target_line = line
+                    target_idx = idx
+                    price_line_text = line
+                    found = True
+                    break
+            if found: break
 
     if extracted_price is None:
         return default_processor(text, msg_date, current_num, source_id)
@@ -599,17 +595,21 @@ def aysel_processor(text, msg_date, current_num, source_id):
     retail_price = RETAIL_MAPPING.get(extracted_price, extracted_price)
     price_ar = convert_to_arabic_numbers(retail_price)
 
-    # تعديل السطر المستهدف: حذف الكلمة المفتاحية والرقم، وإضافة السعر المحول في النهاية
-    modified_line = target_line
-    for kw in price_keywords:
-        modified_line = re.sub(rf'\s*{kw}\s*[:：]?\s*{extracted_price}\s*', '', modified_line, flags=re.IGNORECASE)
-    if not modified_line.strip():
-        modified_line = re.sub(rf'\s*{extracted_price}\s*', '', target_line).strip()
-        if not modified_line:
-            modified_line = target_line
+    # حالة خاصة: إذا كان السطر يحتوي على "عرض" فقط (بدون "سعر" أو "ب") نستبدله بـ "سعر القطعه"
+    if re.search(r'عرض', target_line, re.IGNORECASE) and not re.search(r'سعر|ب', target_line, re.IGNORECASE):
+        modified_line = f"سعر القطعه : 💰 {price_ar} ج 🔥"
+    else:
+        # تعديل السطر المستهدف: حذف الكلمة المفتاحية والرقم، وإضافة السعر المحول في النهاية
+        modified_line = target_line
+        for kw in price_keywords:
+            modified_line = re.sub(rf'\s*{kw}\s*[:：]?\s*{extracted_price}\s*', '', modified_line, flags=re.IGNORECASE)
+        if not modified_line.strip():
+            modified_line = re.sub(rf'\s*{extracted_price}\s*', '', target_line).strip()
+            if not modified_line:
+                modified_line = target_line
 
-    modified_line = re.sub(r'\s*جنيه\s*', '', modified_line).strip()
-    modified_line = f"{modified_line} : 💰 {price_ar} ج 🔥"
+        modified_line = re.sub(r'\s*جنيه\s*', '', modified_line).strip()
+        modified_line = f"{modified_line} : 💰 {price_ar} ج 🔥"
 
     # بناء الوصف: نأخذ جميع الأسطر ما عدا سطر السعر الأصلي
     clean_lines = []
@@ -890,13 +890,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.6.7 (Aysel: order -> description, code, prices) Ready!"
+    return "Retail Pro Bot v3.6.8 (Aysel: treat 'عرض' as single price with 'سعر القطعه') Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.6.7 يبدأ...")
+    print("🚀 Retail Pro Bot v3.6.8 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
