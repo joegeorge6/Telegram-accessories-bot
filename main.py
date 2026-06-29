@@ -46,7 +46,6 @@ BLOCK_KEYWORDS = [
     "Aysel Store ✨♥️\nلينكات قنوات التليجرام 👇\n1-لينك قناة التوك https://t.me/ayselstore258\n2- لينك قناة الاكسسوار https://t.me/ayselstore55\n\n4- لينك قناة الشرابات https://t.me/+SzAH0Jb0JrnOjO32\n5- لينك قناة المنزلى https://t.me/ayselstore4\n6 -  لينك قناة الميكب https://t.me/ayselmakeup98\nلينك جروب التليجرام https://t.me/ayselstore98\n\n-  العنوان 6 ابراهيم مصطفى متفرع من المدينه المنوره النزهه الجديده القاهره \n! اللوكيشن \nhttps://maps.google.com/?q=30.127422,31.376827"
 ]
 
-# قاموس الترجمة (تم إزالة "C": "كوليه")
 P_CODE_TRANSLATION = {
     "A": "انسيال",
     "K": "خلخال",
@@ -478,9 +477,9 @@ def aysel_processor(text, msg_date, current_num, source_id):
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     if len(lines) < 1: return old_result
 
+    # 1. فحص الخيارات المتعددة (أولوية قصوى)
     multi_patterns = ['سعر السلسله', 'سعر السلسلة', 'سعر الانسيال', 'سعر السلفر', 'سعر الجولد', 'سعر القطعه', 'سعر القطعة']
     multi_items = []
-    
     for line in lines:
         for pat in multi_patterns:
             if pat in line:
@@ -503,38 +502,77 @@ def aysel_processor(text, msg_date, current_num, source_id):
             new_lines.append(f"{name} : 💰 {price_ar} ج 🔥")
         return "\n".join(new_lines)
 
+    # 2. معالجة السعر الواحد
     price_keywords = ['سعر', 'جمله', 'اونلاين', 'اون لاين', 'price', 'ب']
     extracted_price = None
-    for line in lines:
+    target_line = None
+    target_idx = -1
+
+    for idx, line in enumerate(lines):
         if re.match(r'^[A-Za-z]+-\d+$', line): continue
+        found = False
         for kw in price_keywords:
             match = re.search(rf'({kw})\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
             if match:
                 extracted_price = int(match.group(2))
+                target_line = line
+                target_idx = idx
+                found = True
                 break
-        if extracted_price: break
+        if found: break
+        # البحث عن 'عرض' بشرط عدم وجود 'رقم' قبله
         if not extracted_price and re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'رقم\s*عرض', line, re.IGNORECASE):
             match = re.search(r'عرض\s*(\d+)', line, re.IGNORECASE)
             if match:
                 extracted_price = int(match.group(1))
+                target_line = line
+                target_idx = idx
+                break
 
-    if extracted_price is None: return old_result
+    if extracted_price is None:
+        return old_result
 
     retail_price = RETAIL_MAPPING.get(extracted_price, extracted_price)
     price_ar = convert_to_arabic_numbers(retail_price)
 
-    lines_old = old_result.split('\n')
-    new_lines = []
-    price_replaced = False
-    for line in lines_old:
-        if re.search(r'السعر :', line) and not price_replaced:
-            new_lines.append(f"السعر : 💰 {price_ar} ج 🔥")
-            price_replaced = True
-        else:
-            new_lines.append(line)
-    if not price_replaced:
-        new_lines.append(f"السعر : 💰 {price_ar} ج 🔥")
-    return "\n".join(new_lines)
+    # تعديل السطر المستهدف: حذف الكلمة المفتاحية والرقم، وإضافة السعر المحول في النهاية
+    modified_line = target_line
+    for kw in price_keywords:
+        modified_line = re.sub(rf'\s*{kw}\s*[:：]?\s*{extracted_price}\s*', '', modified_line, flags=re.IGNORECASE)
+    if not modified_line.strip():
+        modified_line = re.sub(rf'\s*{extracted_price}\s*', '', target_line).strip()
+        if not modified_line:
+            modified_line = target_line
+    modified_line = f"{modified_line} : 💰 {price_ar} ج 🔥"
+
+    # بناء الوصف الجديد: نأخذ old_result ونحذف أي سطر سعر عام
+    old_lines = old_result.split('\n')
+    clean_old_lines = []
+    for line in old_lines:
+        if re.search(r'السعر :', line): continue  # نحذف سطر السعر العام
+        # نحذف أيضاً أي سطر يحتوي على 'فقط' لأنه قد يكون غير مرغوب
+        if re.search(r'\bفقط\b', line, re.IGNORECASE):
+            continue
+        clean_old_lines.append(line)
+
+    # ندرج السطر المعدل قبل الكود
+    code_line_index = -1
+    for i, line in enumerate(clean_old_lines):
+        if 'الكود :' in line:
+            code_line_index = i
+            break
+
+    if code_line_index != -1:
+        clean_old_lines.insert(code_line_index, modified_line)
+    else:
+        clean_old_lines.append(modified_line)
+
+    # التأكد من وجود الكود (قد يكون محذوفاً في old_result)
+    if not any('الكود :' in line for line in clean_old_lines):
+        my_code = generate_code(source_id, msg_date, current_num)
+        clean_old_lines.append(f"الكود : 🔖 {my_code}")
+
+    return "\n".join(clean_old_lines)
 
 def ayman_processor(text, msg_date, current_num, source_id):
     old_result = default_processor(text, msg_date, current_num, source_id)
@@ -578,7 +616,6 @@ def organizer_processor(text, msg_date, current_num, source_id):
     if not code_match: return old_result
 
     prefix_letter = code_match.group(1).upper()
-    # قاعدة خاصة للقناة P: الحرف C يُترجم إلى "سلسلة نظارة"
     if prefix_letter == "C":
         item_name = "سلسلة نظارة"
     elif prefix_letter in P_CODE_TRANSLATION:
@@ -797,13 +834,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.6.2 (Removed C translation from general dict) Ready!"
+    return "Retail Pro Bot v3.6.3 (Aysel: keep and modify price line) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.6.2 يبدأ...")
+    print("🚀 Retail Pro Bot v3.6.3 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
