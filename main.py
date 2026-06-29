@@ -504,41 +504,64 @@ def aysel_processor(text, msg_date, current_num, source_id):
     # 1. فحص الخيارات المتعددة (أولوية قصوى)
     # ============================================================
     multi_items = []
-    price_line_indices = []
     description_lines = []
+
+    # قائمة الكلمات المفتاحية للخيارات المتعددة
+    # نضيف "سلفر" و "جولد" ككلمات دلالية للأسعار
+    price_keywords_multi = ['سعر السلسله', 'سعر السلسلة', 'سعر الانسيال', 'سعر السلفر', 'سعر الجولد', 'سعر القطعه', 'سعر القطعة']
+    # نضيف أيضاً كلمات "سلفر" و "جولد" بدون "سعر"
+    metal_keywords = ['سلفر', 'جولد']
 
     for idx, line in enumerate(lines):
         if re.match(r'^[A-Za-z]+-\d+$', line):
             description_lines.append(line)
             continue
 
+        matched = False
+
         # 1.1 البحث عن "سعر" + اسم المنتج
-        match_sr = re.search(r'^(.*?)\s*سعر\s*(?:القطعه|القطعة|السلسله|السلسلة|الانسيال|السلفر|الجولد)\s*(\d+)', line, re.IGNORECASE)
-        if match_sr:
-            product_name = match_sr.group(1).strip()
-            price = int(match_sr.group(2))
-            if not product_name:
-                product_name = "القطعة"
-            multi_items.append((product_name, price))
-            price_line_indices.append(idx)
+        for kw in price_keywords_multi:
+            if kw in line:
+                match = re.search(rf'{kw}\s*(\d+)', line, re.IGNORECASE)
+                if match:
+                    product_name = kw.replace('سعر ', '').strip()
+                    price = int(match.group(1))
+                    multi_items.append((product_name, price))
+                    matched = True
+                    break
+        if matched:
             continue
 
-        # 1.2 البحث عن "ب" + رقم (خيارات متعددة مثل الأساور)
+        # 1.2 البحث عن "ب" + رقم (مثل الأساور)
         match_b = re.search(r'^(.*?)\s*ب\s*(\d+)', line, re.IGNORECASE)
         if match_b:
             product_name = match_b.group(1).strip()
             price = int(match_b.group(2))
             if product_name:
                 multi_items.append((product_name, price))
-                price_line_indices.append(idx)
+                matched = True
                 continue
 
-        # 1.3 البحث عن "عرض" + رقم (مع الحفاظ على النص بعد الرقم) - لكن هذه الحالة لا تدخل كخيارات متعددة إلا إذا وجد أكثر من عنصر
-        # نتركها للحالة الفردية، لذا لا نضيفها هنا
-        # نضيف السطر للوصف مؤقتاً
+        # 1.3 البحث عن كلمات "سلفر" أو "جولد" (مع أو بدون "ب" أو "سعر")
+        # نبحث عن وجود كلمة "سلفر" أو "جولد" في السطر، ونستخرج الرقم
+        if not matched:
+            for metal in metal_keywords:
+                if metal in line:
+                    match_num = re.search(r'(\d+)', line)
+                    if match_num:
+                        price = int(match_num.group(1))
+                        # نستخدم الاسم "سعر السلفر" أو "سعر الجولد"
+                        product_name = f"سعر {metal}"
+                        multi_items.append((product_name, price))
+                        matched = True
+                        break
+        if matched:
+            continue
+
+        # إذا لم يكن سطر سعر، نضيفه للوصف
         description_lines.append(line)
 
-    # إذا وجدنا أكثر من خيار (من "سعر" أو "ب")، نعتبرهم خيارات متعددة
+    # إذا وجدنا أكثر من خيار، نعتبرهم خيارات متعددة
     if len(multi_items) > 1:
         description = "\n".join(description_lines).strip()
         my_code = generate_code(source_id, msg_date, current_num)
@@ -546,8 +569,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
         for name, price in multi_items:
             retail = RETAIL_MAPPING.get(price, price)
             price_ar = convert_to_arabic_numbers(retail)
-            clean_name = re.sub(r'\s*ب\s*$', '', name).strip()
-            result_lines.append(f"{clean_name} : 💰 {price_ar} ج 🔥")
+            result_lines.append(f"{name} : 💰 {price_ar} ج 🔥")
         return "\n".join(result_lines)
 
     # ============================================================
@@ -556,38 +578,31 @@ def aysel_processor(text, msg_date, current_num, source_id):
     extracted_price = None
     target_line = None
     target_idx = -1
-    price_line_text = None
     price_keywords = ['سعر', 'جمله', 'اونلاين', 'اون لاين', 'price', 'ب']
 
-    # أولاً: البحث عن 'عرض' (بدون كلمات مفتاحية أخرى) كحالة خاصة
     for idx, line in enumerate(lines):
         if re.match(r'^[A-Za-z]+-\d+$', line): continue
+        # البحث عن 'عرض' خاص
         if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'رقم\s*عرض', line, re.IGNORECASE):
-            # نتأكد من عدم وجود كلمة "سعر" أو "ب" في السطر (حتى لا نتعارض مع الأنماط الأخرى)
             if not re.search(r'سعر|ب', line, re.IGNORECASE):
                 match = re.search(r'عرض\s*(\d+)\s*(.*?)$', line, re.IGNORECASE)
                 if match:
                     extracted_price = int(match.group(1))
                     target_line = line
                     target_idx = idx
-                    price_line_text = line
                     break
-
-    # إذا لم نجد عرضاً، نبحث عن الكلمات المفتاحية الأخرى
-    if extracted_price is None:
-        for idx, line in enumerate(lines):
-            if re.match(r'^[A-Za-z]+-\d+$', line): continue
-            found = False
-            for kw in price_keywords:
-                match = re.search(rf'({kw})\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
-                if match:
-                    extracted_price = int(match.group(2))
-                    target_line = line
-                    target_idx = idx
-                    price_line_text = line
-                    found = True
-                    break
-            if found: break
+        if extracted_price:
+            break
+        # البحث عن الكلمات المفتاحية الأخرى
+        for kw in price_keywords:
+            match = re.search(rf'({kw})\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
+            if match:
+                extracted_price = int(match.group(2))
+                target_line = line
+                target_idx = idx
+                break
+        if extracted_price:
+            break
 
     if extracted_price is None:
         return default_processor(text, msg_date, current_num, source_id)
@@ -595,11 +610,10 @@ def aysel_processor(text, msg_date, current_num, source_id):
     retail_price = RETAIL_MAPPING.get(extracted_price, extracted_price)
     price_ar = convert_to_arabic_numbers(retail_price)
 
-    # حالة خاصة: إذا كان السطر يحتوي على "عرض" فقط (بدون "سعر" أو "ب") نستبدله بـ "سعر القطعه"
+    # إذا كان السطر يحتوي على 'عرض' فقط نستبدله بـ "سعر القطعه"
     if re.search(r'عرض', target_line, re.IGNORECASE) and not re.search(r'سعر|ب', target_line, re.IGNORECASE):
         modified_line = f"سعر القطعه : 💰 {price_ar} ج 🔥"
     else:
-        # تعديل السطر المستهدف: حذف الكلمة المفتاحية والرقم، وإضافة السعر المحول في النهاية
         modified_line = target_line
         for kw in price_keywords:
             modified_line = re.sub(rf'\s*{kw}\s*[:：]?\s*{extracted_price}\s*', '', modified_line, flags=re.IGNORECASE)
@@ -607,11 +621,9 @@ def aysel_processor(text, msg_date, current_num, source_id):
             modified_line = re.sub(rf'\s*{extracted_price}\s*', '', target_line).strip()
             if not modified_line:
                 modified_line = target_line
-
         modified_line = re.sub(r'\s*جنيه\s*', '', modified_line).strip()
         modified_line = f"{modified_line} : 💰 {price_ar} ج 🔥"
 
-    # بناء الوصف: نأخذ جميع الأسطر ما عدا سطر السعر الأصلي
     clean_lines = []
     for i, line in enumerate(lines):
         if i == target_idx:
@@ -890,13 +902,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.6.8 (Aysel: treat 'عرض' as single price with 'سعر القطعه') Ready!"
+    return "Retail Pro Bot v3.6.9 (Aysel: detect silver/gold prices as multi-options) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.6.8 يبدأ...")
+    print("🚀 Retail Pro Bot v3.6.9 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
