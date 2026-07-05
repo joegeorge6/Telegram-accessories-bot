@@ -422,7 +422,6 @@ def default_processor(text, msg_date, current_num, source_id):
     return build_text_original(text, source_id, msg_date, current_num)
 
 def apply_general_fixes(text):
-    """تطبيق التحويلات العامة على النص"""
     if not text: return text
     text = re.sub(r'(?:استالس|ستالس|استانليس)', 'استانلس', text, flags=re.IGNORECASE)
     text = re.sub(r'\bبلاتيد\b', 'بليتد', text, flags=re.IGNORECASE)
@@ -488,25 +487,20 @@ def aysel_processor(text, msg_date, current_num, source_id):
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
     
-    # منع النصوص المحظورة
     norm_text = normalize_numbers(text)
     if any(word in norm_text for word in BLOCK_KEYWORDS):
         return None
 
-    # تطبيق التحويلات العامة
     text = apply_general_fixes(text)
 
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     if len(lines) < 1:
         return default_processor(text, msg_date, current_num, source_id)
 
-    # ============================================================
-    # 1. فحص الخيارات المتعددة (أولوية قصوى)
-    # ============================================================
+    # فحص الخيارات المتعددة
     multi_items = []
     description_lines = []
 
-    # قائمة الكلمات المفتاحية للخيارات المتعددة
     price_keywords_multi = ['سعر السلسله', 'سعر السلسلة', 'سعر الانسيال', 'سعر السلفر', 'سعر الجولد', 'سعر القطعه', 'سعر القطعة']
     metal_keywords = ['سلفر', 'جولد']
 
@@ -517,7 +511,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
 
         matched = False
 
-        # 1.1 البحث عن "سعر" + اسم المنتج
         for kw in price_keywords_multi:
             if kw in line:
                 match = re.search(rf'{kw}\s*(\d+)', line, re.IGNORECASE)
@@ -530,7 +523,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
         if matched:
             continue
 
-        # 1.2 البحث عن "ب" + رقم
         match_b = re.search(r'^(.*?)\s*ب\s*(\d+)', line, re.IGNORECASE)
         if match_b:
             product_name = match_b.group(1).strip()
@@ -540,7 +532,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
                 matched = True
                 continue
 
-        # 1.3 البحث عن كلمات "سلفر" أو "جولد"
         if not matched:
             for metal in metal_keywords:
                 if metal in line:
@@ -554,10 +545,8 @@ def aysel_processor(text, msg_date, current_num, source_id):
         if matched:
             continue
 
-        # إذا لم يكن سطر سعر، نضيفه للوصف
         description_lines.append(line)
 
-    # إذا وجدنا أكثر من خيار، نعتبرهم خيارات متعددة
     if len(multi_items) > 1:
         description = "\n".join(description_lines).strip()
         my_code = generate_code(source_id, msg_date, current_num)
@@ -568,9 +557,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
             result_lines.append(f"{name} : 💰 {price_ar} ج 🔥")
         return "\n".join(result_lines)
 
-    # ============================================================
-    # 2. معالجة السعر الواحد
-    # ============================================================
+    # معالجة السعر الواحد
     extracted_price = None
     target_line = None
     target_idx = -1
@@ -578,7 +565,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
 
     for idx, line in enumerate(lines):
         if re.match(r'^[A-Za-z]+-\d+$', line): continue
-        # البحث عن 'عرض' خاص
         if re.search(r'عرض', line, re.IGNORECASE) and not re.search(r'رقم\s*عرض', line, re.IGNORECASE):
             if not re.search(r'سعر|ب', line, re.IGNORECASE):
                 match = re.search(r'عرض\s*(\d+)\s*(.*?)$', line, re.IGNORECASE)
@@ -589,7 +575,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
                     break
         if extracted_price:
             break
-        # البحث عن الكلمات المفتاحية الأخرى
         for kw in price_keywords:
             match = re.search(rf'({kw})\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
             if match:
@@ -606,7 +591,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
     retail_price = RETAIL_MAPPING.get(extracted_price, extracted_price)
     price_ar = convert_to_arabic_numbers(retail_price)
 
-    # إذا كان السطر يحتوي على 'عرض' فقط نستبدله بـ "سعر القطعه"
     if re.search(r'عرض', target_line, re.IGNORECASE) and not re.search(r'سعر|ب', target_line, re.IGNORECASE):
         modified_line = f"سعر القطعه : 💰 {price_ar} ج 🔥"
     else:
@@ -673,10 +657,10 @@ def ayman_processor(text, msg_date, current_num, source_id):
 def organizer_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص للمكتب -1001443297771 (البادئة P):
-    - يحافظ على الوصف الأصلي إذا كان موجوداً.
-    - يستخرج الكود (مثل R1555) ويترجم الحرف الأول.
-    - يضيف اسم المنتج من الترجمة إذا لم يكن موجوداً في الوصف.
-    - يستخرج السعر ويحوله ويضيف الكود الجديد.
+    - يحافظ على الوصف الأصلي مع حذف السعر فقط.
+    - يستخرج الكود (مثل N2745) ويترجم الحرف الأول.
+    - يضيف اسم المنتج من الترجمة إذا لم يكن موجوداً.
+    - يحذف السطر الذي يحتوي على السعر (الرقم الأخير) من الوصف.
     """
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
@@ -690,28 +674,73 @@ def organizer_processor(text, msg_date, current_num, source_id):
     text = apply_general_fixes(text)
     prefix_letter = code_match.group(1).upper()
 
-    # 3. استخراج الوصف الأصلي (حذف الكود والسعر)
+    # 3. استخراج السعر (آخر رقم مناسب)
+    price = None
+    price_match = re.search(r'price\s*(\d+)', text, re.IGNORECASE)
+    if price_match:
+        price = int(price_match.group(1))
+    else:
+        numbers = re.findall(r'\d+', text)
+        if numbers:
+            # نأخذ آخر رقم بين 15 و 2000
+            for num in reversed(numbers):
+                val = int(num)
+                if 15 <= val <= 2000:
+                    price = val
+                    break
+            if price is None:
+                price = int(numbers[-1]) if numbers else None
+
+    if price is None:
+        return default_processor(text, msg_date, current_num, source_id)
+
+    # 4. بناء الوصف (حذف الكود وأسطر الأسعار)
+    # نزيل الكود
     desc_text = re.sub(r'[A-Z]+\s*\d+', '', text, flags=re.IGNORECASE)
-    # نزيل أسطر الأسعار للحصول على وصف نظيف
+    # نزيل الأسطر التي تحتوي على السعر فقط (الرقم الأخير مع رموز تعبيرية)
+    # نحدد السطر الذي يحتوي على الرقم المختار كسعر
+    price_lines_to_remove = []
+    # نبحث عن السطر الذي يحتوي على الرقم price
+    for line in desc_text.split('\n'):
+        line_stripped = line.strip()
+        if not line_stripped:
+            continue
+        # إذا كان السطر يحتوي على الرقم price كرقم منفرد (مع رموز) نعتبره سعراً
+        # نتحقق من وجود الرقم ككلمة مستقلة (مع رموز تعبيرية)
+        if re.search(rf'\b{price}\b', line_stripped):
+            # نتأكد من عدم وجود وصف آخر (كلمات عربية أو إنجليزية) بجانب الرقم
+            # إذا كان السطر يتكون أساساً من الرقم مع رموز تعبيرية فقط، نحذفه
+            cleaned = re.sub(r'[\U0001F300-\U0001F5FF\U0001F600-\U0001F64F\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\U00002702-\U000027B0\U000024C2-\U0001F251\U0001F900-\U0001F9FF\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF\U00002600-\U000026FF\U0000FE00-\U0000FE0F\U0000200D\U00002B50\U00002764\U0001F004\U0001F0CF]+', '', line_stripped)
+            if cleaned.strip().isdigit():
+                # السطر يتكون من أرقام ورموز تعبيرية فقط -> سعر
+                price_lines_to_remove.append(line_stripped)
+                continue
+        # نتحقق أيضاً من الأنماط الأخرى (ب, سعر, price)
+        if re.search(r'price\s*\d+', line_stripped, re.IGNORECASE):
+            price_lines_to_remove.append(line_stripped)
+            continue
+        if re.search(r'ب\s*\d+', line_stripped, re.IGNORECASE):
+            price_lines_to_remove.append(line_stripped)
+            continue
+        if re.search(r'سعر\s*\d+', line_stripped, re.IGNORECASE):
+            price_lines_to_remove.append(line_stripped)
+            continue
+        if re.match(r'^\d+\s*$', line_stripped):
+            price_lines_to_remove.append(line_stripped)
+            continue
+
+    # بناء الوصف النظيف
     clean_desc_lines = []
     for line in desc_text.split('\n'):
-        line = line.strip()
-        if not line:
+        line_stripped = line.strip()
+        if not line_stripped:
             continue
-        # نتحقق من عدم وجود سعر في السطر
-        if re.search(r'price\s*\d+', line, re.IGNORECASE):
+        if line_stripped in price_lines_to_remove:
             continue
-        if re.search(r'ب\s*\d+', line, re.IGNORECASE):
-            continue
-        if re.search(r'سعر\s*\d+', line, re.IGNORECASE):
-            continue
-        if re.search(r'^\d+\s*$', line):
-            continue
-        clean_desc_lines.append(line)
+        clean_desc_lines.append(line_stripped)
     original_desc = "\n".join(clean_desc_lines).strip()
 
-    # 4. تحديد اسم المنتج والوصف النهائي
-    # نحدد الترجمة حسب الحرف
+    # 5. تحديد اسم المنتج والوصف النهائي
     if prefix_letter == "C":
         item_name = "سلسلة نظارة"
     elif prefix_letter in P_CODE_TRANSLATION:
@@ -720,34 +749,15 @@ def organizer_processor(text, msg_date, current_num, source_id):
         item_name = prefix_letter
 
     if original_desc:
-        # إذا كان هناك وصف، نستخدمه مع إضافة اسم المنتج إذا لم يكن موجوداً
+        # إذا كان الوصف يبدأ بالفعل باسم المنتج أو يحتويه، لا نكرر
         if item_name not in original_desc:
             description = f"{item_name} {original_desc}"
         else:
             description = original_desc
     else:
-        # لا يوجد وصف، نستخدم الترجمة الافتراضية
         description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
 
-    # 5. استخراج السعر
-    price = None
-    price_match = re.search(r'price\s*(\d+)', text, re.IGNORECASE)
-    if price_match:
-        price = int(price_match.group(1))
-    else:
-        numbers = re.findall(r'\d+', text)
-        if numbers:
-            for num in reversed(numbers):
-                val = int(num)
-                if 15 <= val <= 2000:
-                    price = val
-                    break
-            if price is None and numbers:
-                price = int(numbers[-1])
-
-    if price is None:
-        return default_processor(text, msg_date, current_num, source_id)
-
+    # 6. تحويل السعر وتوليد الكود
     retail_price = RETAIL_MAPPING.get(price, price)
     price_ar = convert_to_arabic_numbers(retail_price)
     my_code = generate_code(source_id, msg_date, current_num)
@@ -939,13 +949,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.7.0 (Organizer: preserve original description) Ready!"
+    return "Retail Pro Bot v3.7.1 (Organizer: remove price line, keep description) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.7.0 يبدأ...")
+    print("🚀 Retail Pro Bot v3.7.1 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
