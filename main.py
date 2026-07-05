@@ -507,9 +507,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
     description_lines = []
 
     # قائمة الكلمات المفتاحية للخيارات المتعددة
-    # نضيف "سلفر" و "جولد" ككلمات دلالية للأسعار
     price_keywords_multi = ['سعر السلسله', 'سعر السلسلة', 'سعر الانسيال', 'سعر السلفر', 'سعر الجولد', 'سعر القطعه', 'سعر القطعة']
-    # نضيف أيضاً كلمات "سلفر" و "جولد" بدون "سعر"
     metal_keywords = ['سلفر', 'جولد']
 
     for idx, line in enumerate(lines):
@@ -532,7 +530,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
         if matched:
             continue
 
-        # 1.2 البحث عن "ب" + رقم (مثل الأساور)
+        # 1.2 البحث عن "ب" + رقم
         match_b = re.search(r'^(.*?)\s*ب\s*(\d+)', line, re.IGNORECASE)
         if match_b:
             product_name = match_b.group(1).strip()
@@ -542,15 +540,13 @@ def aysel_processor(text, msg_date, current_num, source_id):
                 matched = True
                 continue
 
-        # 1.3 البحث عن كلمات "سلفر" أو "جولد" (مع أو بدون "ب" أو "سعر")
-        # نبحث عن وجود كلمة "سلفر" أو "جولد" في السطر، ونستخرج الرقم
+        # 1.3 البحث عن كلمات "سلفر" أو "جولد"
         if not matched:
             for metal in metal_keywords:
                 if metal in line:
                     match_num = re.search(r'(\d+)', line)
                     if match_num:
                         price = int(match_num.group(1))
-                        # نستخدم الاسم "سعر السلفر" أو "سعر الجولد"
                         product_name = f"سعر {metal}"
                         multi_items.append((product_name, price))
                         matched = True
@@ -675,15 +671,47 @@ def ayman_processor(text, msg_date, current_num, source_id):
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 def organizer_processor(text, msg_date, current_num, source_id):
+    """
+    معالج خاص للمكتب -1001443297771 (البادئة P):
+    - يحافظ على الوصف الأصلي إذا كان موجوداً.
+    - يستخرج الكود (مثل R1555) ويترجم الحرف الأول.
+    - يضيف اسم المنتج من الترجمة إذا لم يكن موجوداً في الوصف.
+    - يستخرج السعر ويحوله ويضيف الكود الجديد.
+    """
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
+    # 1. البحث عن الكود
     code_match = re.search(r'([A-Z]+)\s*\d+', text, re.IGNORECASE)
     if not code_match:
         return default_processor(text, msg_date, current_num, source_id)
 
+    # 2. تطبيق التحويلات العامة
     text = apply_general_fixes(text)
     prefix_letter = code_match.group(1).upper()
+
+    # 3. استخراج الوصف الأصلي (حذف الكود والسعر)
+    desc_text = re.sub(r'[A-Z]+\s*\d+', '', text, flags=re.IGNORECASE)
+    # نزيل أسطر الأسعار للحصول على وصف نظيف
+    clean_desc_lines = []
+    for line in desc_text.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        # نتحقق من عدم وجود سعر في السطر
+        if re.search(r'price\s*\d+', line, re.IGNORECASE):
+            continue
+        if re.search(r'ب\s*\d+', line, re.IGNORECASE):
+            continue
+        if re.search(r'سعر\s*\d+', line, re.IGNORECASE):
+            continue
+        if re.search(r'^\d+\s*$', line):
+            continue
+        clean_desc_lines.append(line)
+    original_desc = "\n".join(clean_desc_lines).strip()
+
+    # 4. تحديد اسم المنتج والوصف النهائي
+    # نحدد الترجمة حسب الحرف
     if prefix_letter == "C":
         item_name = "سلسلة نظارة"
     elif prefix_letter in P_CODE_TRANSLATION:
@@ -691,8 +719,17 @@ def organizer_processor(text, msg_date, current_num, source_id):
     else:
         item_name = prefix_letter
 
-    description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
+    if original_desc:
+        # إذا كان هناك وصف، نستخدمه مع إضافة اسم المنتج إذا لم يكن موجوداً
+        if item_name not in original_desc:
+            description = f"{item_name} {original_desc}"
+        else:
+            description = original_desc
+    else:
+        # لا يوجد وصف، نستخدم الترجمة الافتراضية
+        description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
 
+    # 5. استخراج السعر
     price = None
     price_match = re.search(r'price\s*(\d+)', text, re.IGNORECASE)
     if price_match:
@@ -902,13 +939,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.6.9 (Aysel: detect silver/gold prices as multi-options) Ready!"
+    return "Retail Pro Bot v3.7.0 (Organizer: preserve original description) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.6.9 يبدأ...")
+    print("🚀 Retail Pro Bot v3.7.0 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
