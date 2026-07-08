@@ -124,7 +124,8 @@ channel_counters = load_counters()
 SUPPLIER_PREFIX_MAP = {
     "aymanelawamy123": "A", "sasaaccessories": "S", "ayselstore55": "AS",
     "miyokowatches22": "M", -1001132261086: "P", -1001448553593: "I",
-    -1001682055192: "H", -1001443297771: "P"
+    -1001682055192: "H", -1001443297771: "P",
+    "hebaNor": "N"  # إضافة القناة الجديدة
 }
 
 def _sync_init_db():
@@ -497,26 +498,20 @@ def aysel_processor(text, msg_date, current_num, source_id):
     if len(lines) < 1:
         return default_processor(text, msg_date, current_num, source_id)
 
-    # ============================================================
-    # 1. استخراج جميع الأسعار من النص (باستثناء "عرض رقم")
-    # ============================================================
+    # استخراج جميع الأسعار (باستثناء "عرض رقم")
     all_prices = []
     special_offer_price = None
-    price_lines_indices = []  # لتتبع الأسطر التي تحتوي على أسعار
+    price_lines_indices = []
     description_lines = []
 
-    # نمر على الأسطر لجمع الأسعار
     for idx, line in enumerate(lines):
-        # تجاهل الأكواد مثل B-014
         if re.match(r'^[A-Za-z]+-\d+$', line):
             continue
 
-        # تجاهل "عرض رقم" (لا نعتبره سعراً)
         if re.search(r'عرض\s*رقم\s*\d+', line, re.IGNORECASE):
             description_lines.append(line)
             continue
 
-        # 1.1 البحث عن "عرض خاص"
         if re.search(r'عرض خاص', line, re.IGNORECASE):
             match = re.search(r'عرض خاص\s*(\d+)', line, re.IGNORECASE)
             if match:
@@ -524,68 +519,38 @@ def aysel_processor(text, msg_date, current_num, source_id):
                 price_lines_indices.append(idx)
                 continue
 
-        # 1.2 البحث عن أسعار أخرى (سعر القطعه, سعر, ب, إلخ)
-        # نبحث عن أي رقم في السطر (مع كلمات مفتاحية أو بدونها)
-        # لكن نستبعد الأسطر التي تحتوي على "عرض رقم" (تم معالجتها أعلاه)
-        # نستبعد أيضاً الأسطر التي تحتوي على وصف مثل "مقاسات" أو "طلاء" (لا تحتوي على أرقام كأسعار)
-        # نبحث عن أرقام في السطر، ونتأكد من أنها ليست جزءاً من وصف (مثل "مقاس 8")
-        # نعتبر الرقم سعراً إذا كان السطر لا يحتوي على كلمات مثل "مقاس", "سم", "k", "K", "أرقام"
-        # أو إذا كان الرقم هو العنصر الرئيسي في السطر (مع رموز تعبيرية)
         match_num = re.search(r'(\d+)', line)
         if match_num and not re.search(r'عرض خاص', line, re.IGNORECASE):
-            # نتحقق من أن السطر ليس مجرد مقاس أو مواصفة
-            # نستخدم قائمة كلمات لتجاهل الأسطر التي تحتوي على مواصفات
             ignore_words = ['مقاس', 'سم', 'k', 'K', 'متر', 'ملي', 'inch', 'cm', 'mm']
             if not any(word in line for word in ignore_words):
-                # إذا كان السطر يحتوي على كلمات مفتاحية أو يبدو كسعر
-                # نستخرج الرقم
                 price = int(match_num.group(1))
-                # نتحقق من أن الرقم في نطاق معقول (بين 1 و 2000)
                 if 1 <= price <= 2000:
                     all_prices.append(price)
                     price_lines_indices.append(idx)
                     continue
 
-        # إذا لم يكن سطر سعر، نضيفه للوصف
         description_lines.append(line)
 
-    # ============================================================
-    # 2. اختيار السعر المناسب
-    # ============================================================
     final_price = None
-
-    # 2.1 إذا وجد عرض خاص، نستخدمه
     if special_offer_price is not None:
         final_price = special_offer_price
-    # 2.2 إذا كان هناك أكثر من سعر، نأخذ أقل سعر
     elif len(all_prices) > 1:
         final_price = min(all_prices)
-    # 2.3 إذا كان هناك سعر واحد، نستخدمه
     elif len(all_prices) == 1:
         final_price = all_prices[0]
 
-    # إذا لم نجد أي سعر، نعود للمعالج الافتراضي
     if final_price is None:
         return default_processor(text, msg_date, current_num, source_id)
 
-    # ============================================================
-    # 3. حذف أسطر الأسعار والأكواد من الوصف
-    # ============================================================
     clean_description_lines = []
     for idx, line in enumerate(lines):
-        # تجاهل الأكواد مثل B-014
         if re.match(r'^[A-Za-z]+-\d+$', line):
             continue
-        # تجاهل الأسطر التي تحتوي على أسعار (تم تحديدها)
         if idx in price_lines_indices:
             continue
         clean_description_lines.append(line)
 
     description = "\n".join(clean_description_lines).strip()
-
-    # ============================================================
-    # 4. توليد الكود وتحويل السعر
-    # ============================================================
     my_code = generate_code(source_id, msg_date, current_num)
     retail_price = RETAIL_MAPPING.get(final_price, final_price)
     price_ar = convert_to_arabic_numbers(retail_price)
@@ -754,12 +719,106 @@ def channel_i_processor(text, msg_date, current_num, source_id):
 
     return "\n".join(result_lines)
 
+def hebanor_processor(text, msg_date, current_num, source_id):
+    """
+    معالج خاص لقناة hebaNor (البادئة N):
+    - يحتفظ بجميع أسطر الوصف كما هي (بدون حذف أي شيء).
+    - يستخرج السعر من النص (آخر رقم مناسب بين 15 و 2000).
+    - يضرب السعر في 1.5 (بدلاً من RETAIL_MAPPING).
+    - يحذف سطر السعر الأصلي من الوصف.
+    - يضيف سطراً جديداً بالسعر المضروب والكود.
+    """
+    if not text: return ""
+    if re.search(r'https?://', text, re.IGNORECASE): return None
+
+    # تطبيق التحويلات العامة (مثل ستالس -> استانلس)
+    text = apply_general_fixes(text)
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    if len(lines) < 1:
+        return default_processor(text, msg_date, current_num, source_id)
+
+    # 1. استخراج السعر (أفضل رقم مناسب)
+    price = None
+    price_line_idx = -1
+    price_line_text = ""
+
+    # نبحث عن الأرقام في كل سطر، مع تجاهل الأسطر التي تحتوي على وحدات قياس أو مواصفات
+    ignore_words = ['سم', 'مقاس', 'k', 'K', 'متر', 'ملي', 'inch', 'cm', 'mm', 'ج', 'جنيه']
+    for idx, line in enumerate(lines):
+        # نبحث عن الأرقام في السطر
+        nums = re.findall(r'\d+', line)
+        if nums:
+            # نأخذ الرقم الأخير في السطر (غالباً هو السعر)
+            # لكن نتأكد من أن السطر لا يحتوي على وحدات قياس (مثل سم)
+            if not any(word in line for word in ['سم', 'مقاس', 'k', 'K', 'متر', 'ملي']):
+                # إذا كان السطر يحتوي على كلمات مثل "السعر" أو "ج" نعتبره سعراً
+                if re.search(r'(سعر|السعر|ج|جنيه|price)', line, re.IGNORECASE) or nums:
+                    potential_price = int(nums[-1])
+                    if 15 <= potential_price <= 2000:
+                        price = potential_price
+                        price_line_idx = idx
+                        price_line_text = line
+                        break
+
+    # إذا لم نجد سعراً، نأخذ آخر رقم في النص (مع تجاهل وحدات القياس)
+    if price is None:
+        all_numbers = re.findall(r'\d+', text)
+        # نستبعد الأرقام التي تتبعها كلمات مثل "سم" أو "مقاس"
+        for num in reversed(all_numbers):
+            val = int(num)
+            if 15 <= val <= 2000:
+                # نتأكد من أن الرقم ليس جزءاً من وصف (مثل "سم")
+                # نبحث عن الرقم في النص الأصلي ونتحقق من السياق
+                # لكن نأخذ آخر رقم مناسب كحل أخير
+                price = val
+                # نبحث عن السطر الذي يحتوي على هذا الرقم
+                for idx, line in enumerate(lines):
+                    if str(val) in line:
+                        price_line_idx = idx
+                        price_line_text = line
+                        break
+                if price:
+                    break
+
+    if price is None:
+        return default_processor(text, msg_date, current_num, source_id)
+
+    # 2. ضرب السعر في 1.5
+    new_price = int(price * 1.5)
+    # إذا كانت النتيجة عدد عشري، نقربه لأقرب عدد صحيح
+    # (يتم تقريب 1.5 ضرب عدد صحيح قد ينتج .5، نقربه للأعلى)
+    new_price = int(round(price * 1.5))
+
+    # 3. حذف سطر السعر الأصلي من الوصف
+    clean_lines = []
+    for idx, line in enumerate(lines):
+        if idx == price_line_idx:
+            continue
+        clean_lines.append(line)
+
+    description = "\n".join(clean_lines).strip()
+
+    # 4. توليد الكود
+    my_code = generate_code(source_id, msg_date, current_num)
+
+    # 5. تحويل السعر الجديد إلى أرقام عربية
+    price_ar = convert_to_arabic_numbers(new_price)
+
+    # 6. إضافة سطر السعر الجديد والكود
+    if description:
+        result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
+    else:
+        result_lines = [f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
+
+    return "\n".join(result_lines)
+
 PROCESSOR_MAP = {
     "sasaaccessories": sasa_processor,
     "ayselstore55": aysel_processor,
     "aymanelawamy123": ayman_processor,
     -1001443297771: organizer_processor,
     -1001448553593: channel_i_processor,
+    "hebaNor": hebanor_processor,
 }
 
 def get_processor(source_id):
@@ -900,13 +959,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.7.5 (Aysel: remove codes like B-014, use offer price or min price) Ready!"
+    return "Retail Pro Bot v3.7.6 (Added hebaNor processor with 1.5x price multiplier) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.7.5 يبدأ...")
+    print("🚀 Retail Pro Bot v3.7.6 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
