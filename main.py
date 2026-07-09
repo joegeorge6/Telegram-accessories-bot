@@ -171,6 +171,10 @@ def generate_code(source_id, msg_date, current_num):
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     return f"{prefix}{current_num:02d}{today_str}"
 
+def round_to_nearest_5(x):
+    """تقريب الرقم لأقرب مضاعف للعدد 5"""
+    return int(round(x / 5.0) * 5)
+
 def is_screenshot(photo):
     if not photo: return False
     try:
@@ -499,7 +503,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
     if len(lines) < 1:
         return default_processor(text, msg_date, current_num, source_id)
 
-    # استخراج جميع الأسعار (باستثناء "عرض رقم")
     all_prices = []
     special_offer_price = None
     price_lines_indices = []
@@ -721,6 +724,14 @@ def channel_i_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 def hebanor_processor(text, msg_date, current_num, source_id):
+    """
+    معالج خاص لقناة hebaNor (البادئة N):
+    - يحتفظ بجميع أسطر الوصف كما هي.
+    - يستخرج السعر من النص (آخر رقم مناسب بين 15 و 2000).
+    - يضرب السعر في 1.5 ثم يقربه لأقرب 5.
+    - يحذف سطر السعر الأصلي.
+    - يضيف الكود والسعر الجديد.
+    """
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
@@ -729,7 +740,7 @@ def hebanor_processor(text, msg_date, current_num, source_id):
     if len(lines) < 1:
         return default_processor(text, msg_date, current_num, source_id)
 
-    # استخراج السعر (أفضل رقم مناسب)
+    # 1. استخراج السعر
     price = None
     price_line_idx = -1
     price_line_text = ""
@@ -764,8 +775,10 @@ def hebanor_processor(text, msg_date, current_num, source_id):
     if price is None:
         return default_processor(text, msg_date, current_num, source_id)
 
-    new_price = int(round(price * 1.5))
+    # 2. ضرب السعر في 1.5 وتقريبه لأقرب 5
+    new_price = round_to_nearest_5(price * 1.5)
 
+    # 3. حذف سطر السعر الأصلي
     clean_lines = []
     for idx, line in enumerate(lines):
         if idx == price_line_idx:
@@ -773,9 +786,14 @@ def hebanor_processor(text, msg_date, current_num, source_id):
         clean_lines.append(line)
 
     description = "\n".join(clean_lines).strip()
+
+    # 4. توليد الكود
     my_code = generate_code(source_id, msg_date, current_num)
+
+    # 5. تحويل السعر الجديد إلى أرقام عربية
     price_ar = convert_to_arabic_numbers(new_price)
 
+    # 6. إضافة سطر السعر الجديد والكود
     if description:
         result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
     else:
@@ -786,66 +804,69 @@ def hebanor_processor(text, msg_date, current_num, source_id):
 def channel_k_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص للقناة -1001230500963 (البادئة K):
-    - يحذف سطر Price shop.
-    - يستخرج السعر من سطر Price online ويضربه في 1.5.
-    - يحذف سطر Code (مثل Code:011445).
-    - يحذف أي سطر يحتوي على أرقام هواتف محظورة.
-    - يحتفظ بجميع الأسطر الأخرى كوصف.
-    - يضيف الكود الجديد (K + الرقم + التاريخ) والسعر المعدل.
+    - يمسح سطر Price shop.
+    - يستخرج السعر من سطر Price online.
+    - يضرب السعر في 1.5 ويقربه لأقرب 5.
+    - يمسح سطر Code:xxxxxx.
+    - يمنع أي سطر يحتوي على أرقام هواتف (مدرجة في BLOCK_KEYWORDS).
+    - يضيف الكود الجديد (K...) والسعر المعدل.
     """
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
-    # منع النصوص المحظورة (أرقام الهواتف)
+    # منع النصوص التي تحتوي على أرقام هواتف محظورة
     norm_text = normalize_numbers(text)
     if any(word in norm_text for word in BLOCK_KEYWORDS):
         return None
 
-    # تطبيق التحويلات العامة
     text = apply_general_fixes(text)
-
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     if len(lines) < 1:
         return default_processor(text, msg_date, current_num, source_id)
 
-    price_online = None
-    clean_lines = []
-    price_shop_found = False
+    # 1. استخراج السعر من سطر "Price online"
+    price = None
+    price_online_line = None
+    price_shop_line = None
+    code_line = None
+    cleaned_lines = []
 
     for line in lines:
-        # حذف سطر Price shop
-        if re.search(r'Price\s*shop', line, re.IGNORECASE):
-            price_shop_found = True
+        # تجاهل سطر "Price shop"
+        if re.search(r'Price shop\s*[:：]?\s*\d+', line, re.IGNORECASE):
+            price_shop_line = line
             continue
-
-        # حذف سطر Code
-        if re.search(r'^Code\s*[:：]?\s*\d+', line, re.IGNORECASE):
-            continue
-
-        # استخراج سعر Price online
-        if re.search(r'Price\s*online', line, re.IGNORECASE):
-            match = re.search(r'Price\s*online\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
+        # حفظ سطر "Price online" لاستخراج السعر
+        if re.search(r'Price online\s*[:：]?\s*\d+', line, re.IGNORECASE):
+            price_online_line = line
+            match = re.search(r'Price online\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
             if match:
-                price_online = int(match.group(1))
+                price = int(match.group(1))
             continue
-
-        # حذف أي سطر يحتوي على أرقام هواتف (تطابق مع BLOCK_KEYWORDS)
-        if re.search(r'\b01\d{9}\b', line):
+        # تجاهل سطر "Code:xxxxx"
+        if re.search(r'Code\s*[:：]?\s*\d+', line, re.IGNORECASE):
+            code_line = line
             continue
+        # تجاهل أي سطر يحتوي على أرقام هواتف (موجودة في BLOCK_KEYWORDS)
+        if re.search(r'01\d{9}', line):
+            continue
+        # الاحتفاظ بباقي الأسطر
+        cleaned_lines.append(line)
 
-        clean_lines.append(line)
-
-    # إذا لم نجد سعر Price online، نستخدم default_processor
-    if price_online is None:
+    if price is None:
         return default_processor(text, msg_date, current_num, source_id)
 
-    # ضرب السعر في 1.5
-    new_price = int(round(price_online * 1.5))
+    # 2. ضرب السعر في 1.5 وتقريبه لأقرب 5
+    new_price = round_to_nearest_5(price * 1.5)
 
-    description = "\n".join(clean_lines).strip()
+    # 3. توليد الكود
     my_code = generate_code(source_id, msg_date, current_num)
+
+    # 4. تحويل السعر الجديد إلى أرقام عربية
     price_ar = convert_to_arabic_numbers(new_price)
 
+    # 5. بناء الناتج
+    description = "\n".join(cleaned_lines).strip()
     if description:
         result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
     else:
@@ -1001,7 +1022,7 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.8.0 (Added K channel processor with 1.5x multiplier & price extraction) Ready!"
+    return "Retail Pro Bot v3.8.0 (Added K processor, round prices to nearest 5) Ready!"
 
 async def start_bot():
     global channel_counters
