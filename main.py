@@ -804,21 +804,23 @@ def hebanor_processor(text, msg_date, current_num, source_id):
 def channel_k_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص للقناة -1001230500963 (البادئة K):
+    - يمنع أي نص يحتوي على أرقام هواتف محظورة (باستخدام regex).
     - يمسح سطر Price shop.
     - يستخرج السعر من سطر Price online.
     - يضرب السعر في 1.5 ويقربه لأقرب 5.
     - يمسح سطر Code:xxxxxx.
-    - يمنع أي سطر يحتوي على أرقام هواتف (مدرجة في BLOCK_KEYWORDS).
     - يضيف الكود الجديد (K...) والسعر المعدل.
     """
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
-    # منع النصوص التي تحتوي على أرقام هواتف محظورة
-    norm_text = normalize_numbers(text)
-    if any(word in norm_text for word in BLOCK_KEYWORDS):
-        return None
+    # التحقق من وجود أرقام هواتف محظورة باستخدام regex
+    for phone in BLOCK_KEYWORDS:
+        # نبحث عن الرقم ككلمة مستقلة (مع حدود كلمة)
+        if re.search(rf'\b{re.escape(phone)}\b', text):
+            return None  # منع النسخ بالكامل
 
+    # تطبيق التحويلات العامة
     text = apply_general_fixes(text)
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     if len(lines) < 1:
@@ -847,7 +849,7 @@ def channel_k_processor(text, msg_date, current_num, source_id):
         if re.search(r'Code\s*[:：]?\s*\d+', line, re.IGNORECASE):
             code_line = line
             continue
-        # تجاهل أي سطر يحتوي على أرقام هواتف (موجودة في BLOCK_KEYWORDS)
+        # تجاهل أي سطر يحتوي على أرقام هواتف (باستخدام regex)
         if re.search(r'01\d{9}', line):
             continue
         # الاحتفاظ بباقي الأسطر
@@ -1022,13 +1024,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.8.0 (Added K processor, round prices to nearest 5) Ready!"
+    return "Retail Pro Bot v3.8.1 (Fixed K processor: block phone numbers using regex) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.8.0 يبدأ...")
+    print("🚀 Retail Pro Bot v3.8.1 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
