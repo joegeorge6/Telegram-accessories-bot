@@ -3,6 +3,7 @@ import re
 import asyncio
 import json
 import sqlite3
+import math
 import traceback
 from datetime import datetime, timezone, timedelta
 from pyrogram import Client, filters, idle
@@ -171,9 +172,9 @@ def generate_code(source_id, msg_date, current_num):
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     return f"{prefix}{current_num:02d}{today_str}"
 
-def round_to_nearest_5(x):
-    """تقريب الرقم لأقرب مضاعف للعدد 5"""
-    return int(round(x / 5.0) * 5)
+def round_up_to_nearest_5(x):
+    """تقريب الرقم لأقرب مضاعف للعدد 5 (لأعلى)"""
+    return int(math.ceil(x / 5.0) * 5)
 
 def is_screenshot(photo):
     if not photo: return False
@@ -728,7 +729,7 @@ def hebanor_processor(text, msg_date, current_num, source_id):
     معالج خاص لقناة hebaNor (البادئة N):
     - يحتفظ بجميع أسطر الوصف كما هي.
     - يستخرج السعر من النص (آخر رقم مناسب بين 15 و 2000).
-    - يضرب السعر في 1.5 ثم يقربه لأقرب 5.
+    - يضرب السعر في 1.5 ثم يقربه لأقرب 5 (لأعلى).
     - يحذف سطر السعر الأصلي.
     - يضيف الكود والسعر الجديد.
     """
@@ -775,8 +776,8 @@ def hebanor_processor(text, msg_date, current_num, source_id):
     if price is None:
         return default_processor(text, msg_date, current_num, source_id)
 
-    # 2. ضرب السعر في 1.5 وتقريبه لأقرب 5
-    new_price = round_to_nearest_5(price * 1.5)
+    # 2. ضرب السعر في 1.5 وتقريبه لأقرب 5 (لأعلى)
+    new_price = round_up_to_nearest_5(price * 1.5)
 
     # 3. حذف سطر السعر الأصلي
     clean_lines = []
@@ -804,10 +805,10 @@ def hebanor_processor(text, msg_date, current_num, source_id):
 def channel_k_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص للقناة -1001230500963 (البادئة K):
-    - يمنع أي نص يحتوي على أرقام هواتف محظورة (باستخدام regex).
+    - يمنع أي نص يحتوي على أرقام هواتف محظورة (باستخدام regex) - يتم منع النص بالكامل.
     - يمسح سطر Price shop.
     - يستخرج السعر من سطر Price online.
-    - يضرب السعر في 1.5 ويقربه لأقرب 5.
+    - يضرب السعر في 1.5 ويقربه لأقرب 5 (لأعلى).
     - يمسح سطر Code:xxxxxx.
     - يضيف الكود الجديد (K...) والسعر المعدل.
     """
@@ -815,6 +816,7 @@ def channel_k_processor(text, msg_date, current_num, source_id):
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
     # التحقق من وجود أرقام هواتف محظورة باستخدام regex
+    # نمنع النص بالكامل إذا احتوى على أي من الأرقام المحظورة
     for phone in BLOCK_KEYWORDS:
         # نبحث عن الرقم ككلمة مستقلة (مع حدود كلمة)
         if re.search(rf'\b{re.escape(phone)}\b', text):
@@ -849,7 +851,7 @@ def channel_k_processor(text, msg_date, current_num, source_id):
         if re.search(r'Code\s*[:：]?\s*\d+', line, re.IGNORECASE):
             code_line = line
             continue
-        # تجاهل أي سطر يحتوي على أرقام هواتف (باستخدام regex)
+        # تجاهل أي سطر يحتوي على أرقام هواتف (كإجراء احتياطي)
         if re.search(r'01\d{9}', line):
             continue
         # الاحتفاظ بباقي الأسطر
@@ -858,8 +860,8 @@ def channel_k_processor(text, msg_date, current_num, source_id):
     if price is None:
         return default_processor(text, msg_date, current_num, source_id)
 
-    # 2. ضرب السعر في 1.5 وتقريبه لأقرب 5
-    new_price = round_to_nearest_5(price * 1.5)
+    # 2. ضرب السعر في 1.5 وتقريبه لأقرب 5 (لأعلى)
+    new_price = round_up_to_nearest_5(price * 1.5)
 
     # 3. توليد الكود
     my_code = generate_code(source_id, msg_date, current_num)
@@ -1024,7 +1026,7 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.8.2 (Increased history limit to 6000) Ready!"
+    return "Retail Pro Bot v3.8.2 (Round up to nearest 5, K processor blocks all phone numbers) Ready!"
 
 async def start_bot():
     global channel_counters
