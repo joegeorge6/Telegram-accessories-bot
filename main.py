@@ -964,7 +964,7 @@ async def fetch_history(client):
     for channel in SOURCE_CHANNELS:
         all_items, group_processed = [], set()
         count = 0
-        async for msg in client.get_chat_history(channel, limit=3000):
+        async for msg in client.get_chat_history(channel, limit=6000):
             m_date = msg.date.replace(tzinfo=timezone.utc)
             count += 1
             if count % 200 == 0:
@@ -1024,13 +1024,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.8.1 (Fixed K processor: block phone numbers using regex) Ready!"
+    return "Retail Pro Bot v3.8.2 (Increased history limit to 6000) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.8.1 يبدأ...")
+    print("🚀 Retail Pro Bot v3.8.2 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
