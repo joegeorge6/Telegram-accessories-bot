@@ -811,15 +811,6 @@ def organizer_processor(text, msg_date, current_num, source_id):
     return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 def hebanor_processor(text, msg_date, current_num, source_id):
-    """
-    معالج خاص لقناة hebaNor (البادئة N):
-    - يحتفظ بجميع أسطر الوصف كما هي.
-    - يستخرج السعر من النص (آخر رقم مناسب بين 15 و 2000).
-    - يضرب السعر في المضاعف المناسب حسب الجدول المتدرج.
-    - يقرب الناتج لأقرب 5 (لأعلى).
-    - يحذف سطر السعر الأصلي.
-    - يضيف الكود والسعر الجديد.
-    """
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
@@ -879,16 +870,6 @@ def hebanor_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 def channel_k_processor(text, msg_date, current_num, source_id):
-    """
-    معالج خاص للقناة -1001230500963 (البادئة K):
-    - يمنع أي نص يحتوي على أرقام هواتف محظورة.
-    - يمسح سطر Price shop.
-    - يستخرج السعر من سطر Price online.
-    - يضرب السعر في المضاعف المناسب حسب الجدول المتدرج.
-    - يقرب الناتج لأقرب 5 (لأعلى).
-    - يمسح سطر Code:xxxxxx.
-    - يضيف الكود الجديد (K...) والسعر المعدل.
-    """
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
@@ -938,7 +919,7 @@ def channel_k_processor(text, msg_date, current_num, source_id):
 def channel_i_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص للقناة -1001448553593 (البادئة I):
-    - يحتفظ بسطر السعر الأصلي ويعدل السعر فقط.
+    - يحتفظ بسطر السعر الأصلي ويعدل السعر فقط مع الحفاظ على الإيموجي والتنسيق.
     - يضع الكود قبل سطر السعر.
     - يحول infinity إلى فاشونيستا في الوصف.
     - يدعم منتج واحد أو أكثر.
@@ -958,8 +939,8 @@ def channel_i_processor(text, msg_date, current_num, source_id):
         line = re.sub(r'(?<![a-zA-Z])(?:infiniyu|infinity)(?![a-zA-Z])', 'فاشونيستا', line, flags=re.IGNORECASE)
         converted_lines.append(line)
 
-    # استخراج الأسعار (من سطور تحتوي على "ب" + رقم + "ج")
-    price_pattern = re.compile(r'(.*?)\s*ب\s*(\d+)\s*ج')
+    # استخراج الأسعار (من سطور تحتوي على "ب" + رقم + "ج" أو "جنيه")
+    price_pattern = re.compile(r'(.*?)\s*ب\s*(\d+)\s*(?:ج|جنيه)')
     products = []  # (product_name, price, original_line_index)
     description_lines = []
     price_line_indices = []
@@ -973,7 +954,7 @@ def channel_i_processor(text, msg_date, current_num, source_id):
                 products.append((product_name, price, idx))
                 price_line_indices.append(idx)
         else:
-            # إذا كان السطر لا يحتوي على سعر، نضيفه للوصف (لكن نحتفظ به)
+            # إذا كان السطر لا يحتوي على سعر، نضيفه للوصف
             description_lines.append(line)
 
     # إذا لم نجد أي سعر، نعود للمعالج الافتراضي
@@ -998,24 +979,29 @@ def channel_i_processor(text, msg_date, current_num, source_id):
             result_lines.append(f"{name} بسعر : 💰 {price_ar} ج 🔥")
         return "\n".join(result_lines)
 
-    # منتج واحد: نحتفظ بسطر السعر المعدل
+    # منتج واحد: نحتفظ بسطر السعر المعدل مع الحفاظ على الإيموجي والتنسيق
     if len(products) == 1:
         product_name, price, idx = products[0]
-        # تعديل سطر السعر: نحذف الرقم من السطر ونضيف السعر المحول في النهاية
         original_line = converted_lines[idx]
-        # نزيل الرقم من السطر
+        
+        # استخراج النص قبل الرقم (مع الحفاظ على الإيموجي)
+        # نزيل الرقم من السطر مع الحفاظ على كل شيء آخر
         price_line_clean = re.sub(r'\d+', '', original_line).strip()
-        # نزيل كلمة "ج" أو "جنيه" الزائدة إن وجدت
+        # نزيل كلمة "ج" أو "جنيه" الزائدة إن وجدت (مع الحفاظ على الإيموجي بعدها)
         price_line_clean = re.sub(r'\s*ج\s*$', '', price_line_clean).strip()
         price_line_clean = re.sub(r'\s*جنيه\s*$', '', price_line_clean).strip()
+        
         # إذا أصبح السطر فارغاً، نستخدم النص الأصلي بدون الرقم
         if not price_line_clean:
             price_line_clean = original_line
+        
         # تحويل السعر
         retail = RETAIL_MAPPING.get(price, price)
         price_ar = convert_to_arabic_numbers(retail)
-        # نضيف السعر المحول في نهاية السطر
-        modified_price_line = f"{price_line_clean} {price_ar} ج"
+        
+        # بناء سطر السعر الجديد مع الحفاظ على الإيموجي
+        # نضيف " : 💰 [السعر] ج 🔥" في النهاية
+        modified_price_line = f"{price_line_clean} : 💰 {price_ar} ج 🔥"
 
         # بناء الوصف: نأخذ جميع الأسطر ما عدا سطر السعر الأصلي
         clean_description = []
@@ -1179,13 +1165,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.1 (Channel I: preserve price line, code before price) Ready!"
+    return "Retail Pro Bot v3.9.2 (Channel I: preserve emojis, add : and 💰 to price line) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.1 يبدأ...")
+    print("🚀 Retail Pro Bot v3.9.2 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
