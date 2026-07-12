@@ -173,6 +173,7 @@ def generate_code(source_id, msg_date, current_num):
     return f"{prefix}{current_num:02d}{today_str}"
 
 def get_multiplier(price):
+    """تحديد المضاعف بناءً على السعر الأصلي (لقنوات N و K)"""
     if 80 <= price <= 95:
         return 2.7
     elif 100 <= price <= 150:
@@ -454,13 +455,6 @@ def apply_general_fixes(text):
     return text
 
 def sasa_processor(text, msg_date, current_num, source_id):
-    """
-    معالج خاص لمكتب sasaaccessories:
-    - يدعم حالتين:
-      1. منتج فردي: سطر وصف + جمله + اونلاين → يخرج وصف + كود + سعر واحد.
-      2. طقم به عدة قطع: سطر وصف، ثم لكل قطعة: (اسم القطعة + جمله + اونلاين) → يخرج الوصف + الكود + كل قطعة مع سعرها.
-    - الحفاظ على الحالة الأولى كما هي دون تغيير.
-    """
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
@@ -470,115 +464,6 @@ def sasa_processor(text, msg_date, current_num, source_id):
 
     text = apply_general_fixes(text)
 
-    # ============================================================
-    # محاولة اكتشاف نمط الطقم (عدة قطع)
-    # ============================================================
-    # نبحث عن نمط: اسم قطعة (بدون أرقام) + جمله + اونلاين
-    bundle_items = []
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        # سطر وصف لقطعة (لا يحتوي على "جمله" أو "اونل")
-        if not re.search(r'(جمله|اونل)', line, re.IGNORECASE):
-            # نتأكد أن السطر التالي يحتوي على "جمله" والذي يليه يحتوي على "اونل"
-            if i+2 < len(lines) and re.search(r'جمله\s*\d+', lines[i+1], re.IGNORECASE) and re.search(r'اونل\S*', lines[i+2], re.IGNORECASE):
-                item_name = line
-                # نستخرج سعر الأونلاين من السطر الثالث
-                online_price = None
-                match = re.search(r'(\d+)', lines[i+2])
-                if match:
-                    online_price = int(match.group(1))
-                if online_price is not None:
-                    bundle_items.append((item_name, online_price))
-                i += 3
-                continue
-            else:
-                # قد يكون عنوان الطقم
-                # نتحقق من أنه ليس سطر سعر
-                if not re.search(r'(\d+)', line):
-                    # نضيفه كعنوان ونستمر
-                    # سنتعامل معه كـ "bundle_title" لاحقاً
-                    # لكن نحتاج إلى طريقة لتحديد أن هذا هو عنوان الطقم
-                    # سنفترض أن أول سطر لا يحتوي على أرقام ولا "جمله" ولا "اونل" هو العنوان
-                    if not bundle_items and not re.search(r'جمله|اونل|جمله\s*\d+', line, re.IGNORECASE):
-                        bundle_title = line
-                        i += 1
-                        continue
-                    else:
-                        # إذا لم يكن عنواناً، نضيفه كوصف عادي
-                        i += 1
-                        continue
-                else:
-                    i += 1
-                    continue
-        else:
-            i += 1
-
-    # إذا وجدنا أكثر من قطعة في الطقم
-    if len(bundle_items) > 1:
-        # نبحث عن عنوان الطقم (أول سطر وصف قبل القطع)
-        # نجمع كل الأسطر التي ليست "جمله" ولا "اونل" ولا تحتوي على أرقام كعنوان
-        bundle_title = ""
-        for line in lines:
-            if not re.search(r'جمله|اونل', line, re.IGNORECASE) and not re.search(r'\d+', line):
-                # نتأكد من أنه ليس جزءاً من القطع
-                if not any(item in line for item, _ in bundle_items):
-                    bundle_title = line
-                    break
-
-        # بناء الوصف: نأخذ العنوان إن وجد، وإلا نأخذ أول سطر وصف
-        description_lines = []
-        for line in lines:
-            # نستبعد الأسطر التي تحتوي على "جمله" أو "اونل" أو أرقام (أسعار)
-            if re.search(r'جمله|اونل', line, re.IGNORECASE):
-                continue
-            if re.search(r'\d+', line):
-                continue
-            description_lines.append(line)
-
-        # إذا كان هناك عنوان محدد، نضعه في البداية
-        if bundle_title and bundle_title in description_lines:
-            # نأخذ الباقي بعد العنوان
-            desc_parts = []
-            found_title = False
-            for line in description_lines:
-                if line == bundle_title and not found_title:
-                    found_title = True
-                    desc_parts.append(line)
-                elif found_title:
-                    # نتأكد من أن السطر ليس جزءاً من القطع
-                    if not any(item in line for item, _ in bundle_items):
-                        desc_parts.append(line)
-            description = "\n".join(desc_parts).strip()
-        else:
-            # إذا لم نجد عنواناً، نأخذ كل الأسطر الوصفية (باستثناء أسماء القطع)
-            # لكننا لا نريد أن تظهر أسماء القطع في الوصف لأنها ستظهر في الأسعار
-            # لذا نستبعد الأسطر التي تطابق أسماء القطع
-            item_names = [name for name, _ in bundle_items]
-            desc_lines = []
-            for line in description_lines:
-                if line not in item_names:
-                    desc_lines.append(line)
-            description = "\n".join(desc_lines).strip()
-            # إذا كان الوصف فارغاً، نستخدم أول سطر وصف (قد يكون العنوان)
-            if not description and description_lines:
-                description = description_lines[0]
-
-        my_code = generate_code(source_id, msg_date, current_num)
-        result_lines = [description, f"الكود : 🔖 {my_code}"]
-
-        # إضافة كل قطعة مع سعرها المحول
-        for item_name, online_price in bundle_items:
-            retail_price = RETAIL_MAPPING.get(online_price, online_price)
-            price_ar = convert_to_arabic_numbers(retail_price)
-            result_lines.append(f"{item_name} بسعر : 💰 {price_ar} ج 🔥")
-
-        return "\n".join(result_lines)
-
-    # ============================================================
-    # الحالة القديمة: منتج فردي (كما كان يعمل من قبل)
-    # ============================================================
-    # نبحث عن وجود "جمله" و "اونل" في النص
     has_jomla = any(re.search(r'جمله\s*\d+', line, re.IGNORECASE) for line in lines)
     has_online = any(re.search(r'اونل\S*', line, re.IGNORECASE) for line in lines)
 
@@ -589,9 +474,8 @@ def sasa_processor(text, msg_date, current_num, source_id):
     for line in lines:
         if re.search(r'اونل\S*', line, re.IGNORECASE):
             match = re.search(r'(\d+)', line)
-            if match:
-                online_price = int(match.group(1))
-                break
+            if match: online_price = int(match.group(1))
+            break
 
     if online_price is None:
         jomla_price = None
@@ -608,10 +492,8 @@ def sasa_processor(text, msg_date, current_num, source_id):
 
     clean_lines = []
     for line in lines:
-        if re.search(r'جمله\s*\d+', line, re.IGNORECASE):
-            continue
-        if re.search(r'اونل\S*', line, re.IGNORECASE):
-            continue
+        if re.search(r'جمله\s*\d+', line, re.IGNORECASE): continue
+        if re.search(r'اونل\S*', line, re.IGNORECASE): continue
         clean_lines.append(line)
 
     description = "\n".join(clean_lines).strip()
@@ -928,46 +810,16 @@ def organizer_processor(text, msg_date, current_num, source_id):
 
     return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
-def channel_i_processor(text, msg_date, current_num, source_id):
-    if not text: return ""
-    if re.search(r'https?://', text, re.IGNORECASE): return None
-
-    original_lines = [line.strip() for line in text.split('\n') if line.strip()]
-    if len(original_lines) < 2:
-        return default_processor(text, msg_date, current_num, source_id)
-
-    text = apply_general_fixes(text)
-
-    price_pattern = re.compile(r'(.*?)\s*ب\s*(\d+)\s*ج')
-    products = []
-    description_lines = []
-
-    for line in original_lines:
-        match = price_pattern.search(line)
-        if match:
-            product_name = match.group(1).strip()
-            price = int(match.group(2))
-            if product_name:
-                products.append((product_name, price))
-        else:
-            description_lines.append(line)
-
-    description_text = "\n".join(description_lines)
-    description_text = re.sub(r'(?<![a-zA-Z])(?:infiniyu|infinity)(?![a-zA-Z])', 'فاشونيستا', description_text, flags=re.IGNORECASE)
-
-    if len(products) < 2:
-        return default_processor(text, msg_date, current_num, source_id)
-
-    my_code = generate_code(source_id, msg_date, current_num)
-    result_lines = [description_text, f"الكود : 🔖 {my_code}"]
-    for name, price in products:
-        retail_price = RETAIL_MAPPING.get(price, price)
-        price_ar = convert_to_arabic_numbers(retail_price)
-        result_lines.append(f"{name} بسعر : 💰 {price_ar} ج 🔥")
-
-    return "\n".join(result_lines)
-
 def hebanor_processor(text, msg_date, current_num, source_id):
+    """
+    معالج خاص لقناة hebaNor (البادئة N):
+    - يحتفظ بجميع أسطر الوصف كما هي.
+    - يستخرج السعر من النص (آخر رقم مناسب بين 15 و 2000).
+    - يضرب السعر في المضاعف المناسب حسب الجدول المتدرج.
+    - يقرب الناتج لأقرب 5 (لأعلى).
+    - يحذف سطر السعر الأصلي.
+    - يضيف الكود والسعر الجديد.
+    """
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
@@ -1027,6 +879,16 @@ def hebanor_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 def channel_k_processor(text, msg_date, current_num, source_id):
+    """
+    معالج خاص للقناة -1001230500963 (البادئة K):
+    - يمنع أي نص يحتوي على أرقام هواتف محظورة.
+    - يمسح سطر Price shop.
+    - يستخرج السعر من سطر Price online.
+    - يضرب السعر في المضاعف المناسب حسب الجدول المتدرج.
+    - يقرب الناتج لأقرب 5 (لأعلى).
+    - يمسح سطر Code:xxxxxx.
+    - يضيف الكود الجديد (K...) والسعر المعدل.
+    """
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
@@ -1072,6 +934,102 @@ def channel_k_processor(text, msg_date, current_num, source_id):
         result_lines = [f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
 
     return "\n".join(result_lines)
+
+def channel_i_processor(text, msg_date, current_num, source_id):
+    """
+    معالج خاص للقناة -1001448553593 (البادئة I):
+    - يحتفظ بسطر السعر الأصلي ويعدل السعر فقط.
+    - يضع الكود قبل سطر السعر.
+    - يحول infinity إلى فاشونيستا في الوصف.
+    - يدعم منتج واحد أو أكثر.
+    """
+    if not text: return ""
+    if re.search(r'https?://', text, re.IGNORECASE): return None
+
+    # تطبيق التحويلات العامة
+    text = apply_general_fixes(text)
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    if len(lines) < 1:
+        return default_processor(text, msg_date, current_num, source_id)
+
+    # تحويل infinity إلى فاشونيستا في جميع الأسطر
+    converted_lines = []
+    for line in lines:
+        line = re.sub(r'(?<![a-zA-Z])(?:infiniyu|infinity)(?![a-zA-Z])', 'فاشونيستا', line, flags=re.IGNORECASE)
+        converted_lines.append(line)
+
+    # استخراج الأسعار (من سطور تحتوي على "ب" + رقم + "ج")
+    price_pattern = re.compile(r'(.*?)\s*ب\s*(\d+)\s*ج')
+    products = []  # (product_name, price, original_line_index)
+    description_lines = []
+    price_line_indices = []
+
+    for idx, line in enumerate(converted_lines):
+        match = price_pattern.search(line)
+        if match:
+            product_name = match.group(1).strip()
+            price = int(match.group(2))
+            if product_name:
+                products.append((product_name, price, idx))
+                price_line_indices.append(idx)
+        else:
+            # إذا كان السطر لا يحتوي على سعر، نضيفه للوصف (لكن نحتفظ به)
+            description_lines.append(line)
+
+    # إذا لم نجد أي سعر، نعود للمعالج الافتراضي
+    if not products:
+        return default_processor(text, msg_date, current_num, source_id)
+
+    # توليد الكود
+    my_code = generate_code(source_id, msg_date, current_num)
+
+    # معالجة الحالات المختلفة
+    if len(products) > 1:
+        # منتجات متعددة: نعرض كل منتج مع سعره المحول، ونحذف أسطر الأسعار الأصلية من الوصف
+        clean_description = []
+        for idx, line in enumerate(converted_lines):
+            if idx not in price_line_indices:
+                clean_description.append(line)
+        description = "\n".join(clean_description).strip()
+        result_lines = [description, f"الكود : 🔖 {my_code}"]
+        for name, price, _ in products:
+            retail = RETAIL_MAPPING.get(price, price)
+            price_ar = convert_to_arabic_numbers(retail)
+            result_lines.append(f"{name} بسعر : 💰 {price_ar} ج 🔥")
+        return "\n".join(result_lines)
+
+    # منتج واحد: نحتفظ بسطر السعر المعدل
+    if len(products) == 1:
+        product_name, price, idx = products[0]
+        # تعديل سطر السعر: نحذف الرقم من السطر ونضيف السعر المحول في النهاية
+        original_line = converted_lines[idx]
+        # نزيل الرقم من السطر
+        price_line_clean = re.sub(r'\d+', '', original_line).strip()
+        # نزيل كلمة "ج" أو "جنيه" الزائدة إن وجدت
+        price_line_clean = re.sub(r'\s*ج\s*$', '', price_line_clean).strip()
+        price_line_clean = re.sub(r'\s*جنيه\s*$', '', price_line_clean).strip()
+        # إذا أصبح السطر فارغاً، نستخدم النص الأصلي بدون الرقم
+        if not price_line_clean:
+            price_line_clean = original_line
+        # تحويل السعر
+        retail = RETAIL_MAPPING.get(price, price)
+        price_ar = convert_to_arabic_numbers(retail)
+        # نضيف السعر المحول في نهاية السطر
+        modified_price_line = f"{price_line_clean} {price_ar} ج"
+
+        # بناء الوصف: نأخذ جميع الأسطر ما عدا سطر السعر الأصلي
+        clean_description = []
+        for i, line in enumerate(converted_lines):
+            if i != idx:
+                clean_description.append(line)
+        description = "\n".join(clean_description).strip()
+
+        # نضع الكود ثم سطر السعر
+        result_lines = [description, f"الكود : 🔖 {my_code}", modified_price_line]
+        return "\n".join(result_lines)
+
+    # إذا لم نصل لأي حالة، نعود للمعالج الافتراضي
+    return default_processor(text, msg_date, current_num, source_id)
 
 PROCESSOR_MAP = {
     "sasaaccessories": sasa_processor,
@@ -1221,7 +1179,7 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.1 (Sasa: bundle/multi-item support) Ready!"
+    return "Retail Pro Bot v3.9.1 (Channel I: preserve price line, code before price) Ready!"
 
 async def start_bot():
     global channel_counters
