@@ -916,10 +916,13 @@ def channel_k_processor(text, msg_date, current_num, source_id):
 
     return "\n".join(result_lines)
 
+# ==========================================
+# معالج القناة I (معدل) - الإصدار 3.9.3
+# ==========================================
 def channel_i_processor(text, msg_date, current_num, source_id):
     """
     معالج خاص للقناة -1001448553593 (البادئة I):
-    - يحتفظ بسطر السعر الأصلي ويعدل السعر فقط مع الحفاظ على الإيموجي والتنسيق.
+    - يحتفظ بسطر السعر المعدل مع الحفاظ على الإيموجي والتنسيق.
     - يضع الكود قبل سطر السعر.
     - يحول infinity إلى فاشونيستا في الوصف.
     - يدعم منتج واحد أو أكثر.
@@ -927,22 +930,18 @@ def channel_i_processor(text, msg_date, current_num, source_id):
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
-    # تطبيق التحويلات العامة
     text = apply_general_fixes(text)
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     if len(lines) < 1:
         return default_processor(text, msg_date, current_num, source_id)
 
-    # تحويل infinity إلى فاشونيستا في جميع الأسطر
     converted_lines = []
     for line in lines:
         line = re.sub(r'(?<![a-zA-Z])(?:infiniyu|infinity)(?![a-zA-Z])', 'فاشونيستا', line, flags=re.IGNORECASE)
         converted_lines.append(line)
 
-    # استخراج الأسعار (من سطور تحتوي على "ب" + رقم + "ج" أو "جنيه")
     price_pattern = re.compile(r'(.*?)\s*ب\s*(\d+)\s*(?:ج|جنيه)')
     products = []  # (product_name, price, original_line_index)
-    description_lines = []
     price_line_indices = []
 
     for idx, line in enumerate(converted_lines):
@@ -953,20 +952,13 @@ def channel_i_processor(text, msg_date, current_num, source_id):
             if product_name:
                 products.append((product_name, price, idx))
                 price_line_indices.append(idx)
-        else:
-            # إذا كان السطر لا يحتوي على سعر، نضيفه للوصف
-            description_lines.append(line)
 
-    # إذا لم نجد أي سعر، نعود للمعالج الافتراضي
     if not products:
         return default_processor(text, msg_date, current_num, source_id)
 
-    # توليد الكود
     my_code = generate_code(source_id, msg_date, current_num)
 
-    # معالجة الحالات المختلفة
     if len(products) > 1:
-        # منتجات متعددة: نعرض كل منتج مع سعره المحول، ونحذف أسطر الأسعار الأصلية من الوصف
         clean_description = []
         for idx, line in enumerate(converted_lines):
             if idx not in price_line_indices:
@@ -979,44 +971,24 @@ def channel_i_processor(text, msg_date, current_num, source_id):
             result_lines.append(f"{name} بسعر : 💰 {price_ar} ج 🔥")
         return "\n".join(result_lines)
 
-    # منتج واحد: نحتفظ بسطر السعر المعدل مع الحفاظ على الإيموجي والتنسيق
-    if len(products) == 1:
-        product_name, price, idx = products[0]
-        original_line = converted_lines[idx]
-        
-        # استخراج النص قبل الرقم (مع الحفاظ على الإيموجي)
-        # نزيل الرقم من السطر مع الحفاظ على كل شيء آخر
-        price_line_clean = re.sub(r'\d+', '', original_line).strip()
-        # نزيل كلمة "ج" أو "جنيه" الزائدة إن وجدت (مع الحفاظ على الإيموجي بعدها)
-        price_line_clean = re.sub(r'\s*ج\s*$', '', price_line_clean).strip()
-        price_line_clean = re.sub(r'\s*جنيه\s*$', '', price_line_clean).strip()
-        
-        # إذا أصبح السطر فارغاً، نستخدم النص الأصلي بدون الرقم
-        if not price_line_clean:
-            price_line_clean = original_line
-        
-        # تحويل السعر
-        retail = RETAIL_MAPPING.get(price, price)
-        price_ar = convert_to_arabic_numbers(retail)
-        
-        # بناء سطر السعر الجديد مع الحفاظ على الإيموجي
-        # نضيف " : 💰 [السعر] ج 🔥" في النهاية
-        modified_price_line = f"{price_line_clean} : 💰 {price_ar} ج 🔥"
+    # منتج واحد
+    product_name, price, idx = products[0]
+    retail = RETAIL_MAPPING.get(price, price)
+    price_ar = convert_to_arabic_numbers(retail)
+    modified_price_line = f"{product_name} ب : 💰 {price_ar} ج 🔥"
 
-        # بناء الوصف: نأخذ جميع الأسطر ما عدا سطر السعر الأصلي
-        clean_description = []
-        for i, line in enumerate(converted_lines):
-            if i != idx:
-                clean_description.append(line)
-        description = "\n".join(clean_description).strip()
+    clean_description = []
+    for i, line in enumerate(converted_lines):
+        if i != idx:
+            clean_description.append(line)
+    description = "\n".join(clean_description).strip()
 
-        # نضع الكود ثم سطر السعر
-        result_lines = [description, f"الكود : 🔖 {my_code}", modified_price_line]
-        return "\n".join(result_lines)
+    result_lines = [description, f"الكود : 🔖 {my_code}", modified_price_line]
+    return "\n".join(result_lines)
 
-    # إذا لم نصل لأي حالة، نعود للمعالج الافتراضي
-    return default_processor(text, msg_date, current_num, source_id)
-
+# ==========================================
+# 5. نظام النشر
+# ==========================================
 PROCESSOR_MAP = {
     "sasaaccessories": sasa_processor,
     "ayselstore55": aysel_processor,
@@ -1039,7 +1011,7 @@ def build_text(original_text, source_id, msg_date, current_num):
     return processor(original_text, msg_date, current_num, source_id)
 
 # ==========================================
-# 5. نظام النشر
+# 6. دوال النشر والتشغيل
 # ==========================================
 async def safe_send(client, messages, source_id):
     if not messages or await is_msg_processed(messages[0].id, source_id):
@@ -1133,7 +1105,7 @@ async def fetch_history(client):
     print("✅ History finished.")
 
 # ==========================================
-# 6. تشغيل البوت
+# 7. تشغيل البوت
 # ==========================================
 app = Client("retail_bot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING, in_memory=True)
 
@@ -1165,13 +1137,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.2 (Channel I: preserve emojis, add : and 💰 to price line) Ready!"
+    return "Retail Pro Bot v3.9.3 (Channel I: preserve emojis, add : and 💰 to price line) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.2 يبدأ...")
+    print("🚀 Retail Pro Bot v3.9.3 يبدأ...")   # <-- تم التحديث إلى 3.9.3
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
