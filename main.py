@@ -172,6 +172,24 @@ def generate_code(source_id, msg_date, current_num):
     prefix = SUPPLIER_PREFIX_MAP.get(source_id, "UN")
     return f"{prefix}{current_num:02d}{today_str}"
 
+def get_multiplier(price):
+    """تحديد المضاعف بناءً على السعر الأصلي (لقنوات N و K)"""
+    if 80 <= price <= 95:
+        return 2.7
+    elif 100 <= price <= 150:
+        return 2.4
+    elif 155 <= price <= 200:
+        return 2.0
+    elif 205 <= price <= 250:
+        return 1.7
+    elif 255 <= price <= 295:
+        return 1.6
+    elif price >= 300:
+        return 1.5
+    else:
+        # إذا كان السعر أقل من 80، نستخدم المضاعف الافتراضي 1.5
+        return 1.5
+
 def round_up_to_nearest_5(x):
     return int(math.ceil(x / 5.0) * 5)
 
@@ -490,16 +508,6 @@ def sasa_processor(text, msg_date, current_num, source_id):
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 def aysel_processor(text, msg_date, current_num, source_id):
-    """
-    معالج خاص لقناة ayselstore55.
-    - يدعم الخيارات المتعددة (سلسله، انسيال، سلفر، جولد...).
-    - يدعم السعر الواحد مع أولوية لـ 'عرض خاص' إن وجد.
-    - في حالة وجود 'عرض خاص'، يتم استخدام سعره ويتم حذف جميع الأسعار الأخرى.
-    - في حالة عدم وجود عرض خاص، يتم استخدام أقل سعر.
-    - يحذف جميع أسطر الأسعار والأكواد (مثل B-014) وكلمة 'فقط' من الوصف.
-    - يحتفظ بنص سطر السعر الأصلي (بدون الرقم) ويضيف السعر المحول في نهايته.
-    - في حالة العرض الخاص، يتم عرض سطر السعر بصيغة 'السعر : 💰 [السعر المحول] ج 🔥'.
-    """
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
     
@@ -512,36 +520,28 @@ def aysel_processor(text, msg_date, current_num, source_id):
     if len(lines) < 1:
         return default_processor(text, msg_date, current_num, source_id)
 
-    # ============================================================
-    # 1. جمع المعلومات من الأسطر
-    # ============================================================
-    multi_items = []           # (وصف المنتج, السعر) للخيارات المتعددة
-    all_prices = []            # جميع الأسعار (لحساب أقل سعر)
+    multi_items = []
+    all_prices = []
     special_offer_price = None
-    price_lines_indices = []   # فهارس الأسطر التي تحتوي على أسعار (سيتم حذفها)
-    description_lines = []     # فهارس الأسطر التي ليست أسعاراً
+    price_lines_indices = []
+    description_lines = []
 
-    # أنماط الأسعار للخيارات المتعددة
     price_patterns = [
         r'^(.*?)\s*سعر\s*(?:القطعه|القطعة|السلسله|السلسلة|الانسيال|السلفر|الجولد)\s*(\d+)',
         r'^(.*?)\s*سعر\s*(\d+)',
         r'^(.*?)\s*ب\s*(\d+)',
     ]
 
-    # أسماء محددة للخيارات (للتعرف على الخيارات الحقيقية)
     specific_names = ['سلسله', 'سلسلة', 'انسيال', 'سلفر', 'جولد']
 
     for idx, line in enumerate(lines):
-        # تجاهل الأكواد مثل B-014
         if re.match(r'^[A-Za-z]+-\d+$', line):
             continue
 
-        # تجاهل الأسطر التي تحتوي على "عرض رقم" (لا نعتبرها سعراً)
         if re.search(r'عرض\s*رقم\s*\d+', line, re.IGNORECASE):
             description_lines.append(idx)
             continue
 
-        # البحث عن "عرض خاص"
         if re.search(r'عرض خاص', line, re.IGNORECASE):
             match = re.search(r'عرض خاص\s*(\d+)', line, re.IGNORECASE)
             if match:
@@ -549,14 +549,12 @@ def aysel_processor(text, msg_date, current_num, source_id):
                 price_lines_indices.append(idx)
                 continue
 
-        # البحث عن خيارات متعددة (أنماط الأسعار)
         matched = False
         for pattern in price_patterns:
             match = re.search(pattern, line, re.IGNORECASE)
             if match:
                 product_name = match.group(1).strip()
                 price = int(match.group(2))
-                # إذا كان product_name غير فارغ، نضيفه كخيار
                 if product_name:
                     multi_items.append((product_name, price))
                     all_prices.append(price)
@@ -566,7 +564,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
         if matched:
             continue
 
-        # البحث عن أرقام في نهاية السطر (كحل أخير للخيارات المتعددة)
         if not matched:
             match_num = re.search(r'(\d+)\s*$', line)
             if match_num and not re.search(r'عرض خاص', line, re.IGNORECASE):
@@ -581,23 +578,14 @@ def aysel_processor(text, msg_date, current_num, source_id):
                         matched = True
                         continue
 
-        # إذا لم يكن سطر سعر، نضيفه للوصف
         if not matched:
             description_lines.append(idx)
 
-    # ============================================================
-    # 2. تحديد النوع: خيارات متعددة أم سعر واحد
-    # ============================================================
     is_multi_option = len(multi_items) > 1
 
-    # ============================================================
-    # 3. معالجة الخيارات المتعددة
-    # ============================================================
     if is_multi_option:
-        # نتحقق من وجود خيارات بأسماء محددة (سلسله، انسيال، سلفر، جولد)
         has_specific = any(any(name in item[0] for name in specific_names) for item in multi_items)
         
-        # إذا كانت هناك خيارات محددة، نتجاهل الأسطر التي تحتوي على كلمات مثل "القطعتين", "الاتنين", "مع بعض"
         if has_specific:
             filtered_items = []
             for name, price in multi_items:
@@ -606,14 +594,10 @@ def aysel_processor(text, msg_date, current_num, source_id):
                 filtered_items.append((name, price))
             multi_items = filtered_items
 
-        # إذا أصبح لدينا خيار واحد فقط بعد التصفية، نتعامل معه كسعر واحد
         if len(multi_items) <= 1:
-            # نعيد بناء all_prices من multi_items
             all_prices = [price for _, price in multi_items]
-            # نمر إلى منطق السعر الواحد
             is_multi_option = False
         else:
-            # بناء الوصف للخيارات المتعددة
             clean_description_lines = []
             for idx, line in enumerate(lines):
                 if re.match(r'^[A-Za-z]+-\d+$', line):
@@ -637,28 +621,19 @@ def aysel_processor(text, msg_date, current_num, source_id):
             
             return "\n".join(result_lines)
 
-    # ============================================================
-    # 4. معالجة السعر الواحد
-    # ============================================================
-    # إذا كان special_offer_price موجود، نستخدمه ونتجاهل كل الأسعار الأخرى
-    # ونحذف جميع أسطر الأسعار (بما فيها سعر القطعه)
     if special_offer_price is not None:
         final_price = special_offer_price
-        # نجمع كل الأسطر التي تحتوي على أرقام (باستثناء وحدات القياس) ونعتبرها أسعاراً ونحذفها
         for idx, line in enumerate(lines):
             if re.match(r'^[A-Za-z]+-\d+$', line):
                 continue
             if idx in price_lines_indices:
                 continue
-            # إذا كان السطر يحتوي على رقم (وليس مقاساً)، نضيفه إلى price_lines_indices
             if re.search(r'\d+', line):
                 ignore_words = ['مقاس', 'سم', 'k', 'K', 'متر', 'ملي', 'inch', 'cm', 'mm']
                 if not any(word in line for word in ignore_words):
                     price_lines_indices.append(idx)
-        # في حالة العرض الخاص، نضع سطر السعر بصيغة "السعر :" بدلاً من "عرض خاص :"
         price_line_final = None
     else:
-        # إذا لم يوجد عرض خاص، نستخدم أقل سعر أو السعر الوحيد
         final_price = None
         price_line_text = ""
 
@@ -681,9 +656,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
     if final_price is None:
         return default_processor(text, msg_date, current_num, source_id)
 
-    # ============================================================
-    # 5. بناء الوصف (حذف الأسعار والأكواد وكلمة 'فقط')
-    # ============================================================
     clean_description_lines = []
     for idx, line in enumerate(lines):
         if re.match(r'^[A-Za-z]+-\d+$', line):
@@ -699,14 +671,9 @@ def aysel_processor(text, msg_date, current_num, source_id):
     retail_price = RETAIL_MAPPING.get(final_price, final_price)
     price_ar = convert_to_arabic_numbers(retail_price)
 
-    # ============================================================
-    # 6. تحضير سطر السعر المعدل
-    # ============================================================
     if special_offer_price is not None:
-        # في حالة العرض الخاص، نستخدم الصيغة العامة "السعر :"
         price_line_final = f"السعر : 💰 {price_ar} ج 🔥"
     elif price_line_text:
-        # نزيل الأرقام من سطر السعر
         price_line_clean = re.sub(r'\d+', '', price_line_text).strip()
         if not price_line_clean:
             price_line_clean = price_line_text
@@ -714,9 +681,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
     else:
         price_line_final = f"السعر : 💰 {price_ar} ج 🔥"
 
-    # ============================================================
-    # 7. بناء الناتج النهائي
-    # ============================================================
     result_lines = []
     if description:
         result_lines.append(description)
@@ -887,6 +851,15 @@ def channel_i_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 def hebanor_processor(text, msg_date, current_num, source_id):
+    """
+    معالج خاص لقناة hebaNor (البادئة N):
+    - يحتفظ بجميع أسطر الوصف كما هي.
+    - يستخرج السعر من النص (آخر رقم مناسب بين 15 و 2000).
+    - يضرب السعر في المضاعف المناسب حسب الجدول المتدرج.
+    - يقرب الناتج لأقرب 5 (لأعلى).
+    - يحذف سطر السعر الأصلي.
+    - يضيف الكود والسعر الجديد.
+    """
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
@@ -925,7 +898,9 @@ def hebanor_processor(text, msg_date, current_num, source_id):
     if price is None:
         return default_processor(text, msg_date, current_num, source_id)
 
-    new_price = round_up_to_nearest_5(price * 1.5)
+    # حساب المضاعف المناسب
+    multiplier = get_multiplier(price)
+    new_price = round_up_to_nearest_5(price * multiplier)
 
     clean_lines = []
     for idx, line in enumerate(lines):
@@ -945,6 +920,16 @@ def hebanor_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 def channel_k_processor(text, msg_date, current_num, source_id):
+    """
+    معالج خاص للقناة -1001230500963 (البادئة K):
+    - يمنع أي نص يحتوي على أرقام هواتف محظورة.
+    - يمسح سطر Price shop.
+    - يستخرج السعر من سطر Price online.
+    - يضرب السعر في المضاعف المناسب حسب الجدول المتدرج.
+    - يقرب الناتج لأقرب 5 (لأعلى).
+    - يمسح سطر Code:xxxxxx.
+    - يضيف الكود الجديد (K...) والسعر المعدل.
+    """
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
@@ -977,7 +962,10 @@ def channel_k_processor(text, msg_date, current_num, source_id):
     if price is None:
         return default_processor(text, msg_date, current_num, source_id)
 
-    new_price = round_up_to_nearest_5(price * 1.5)
+    # حساب المضاعف المناسب
+    multiplier = get_multiplier(price)
+    new_price = round_up_to_nearest_5(price * multiplier)
+
     my_code = generate_code(source_id, msg_date, current_num)
     price_ar = convert_to_arabic_numbers(new_price)
 
@@ -1137,13 +1125,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.8.8 (Aysel: offer price displays as 'السعر') Ready!"
+    return "Retail Pro Bot v3.9.0 (N & K: tiered multipliers) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.8.8 يبدأ...")
+    print("🚀 Retail Pro Bot v3.9.0 يبدأ...")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
