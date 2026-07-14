@@ -810,68 +810,57 @@ def organizer_processor(text, msg_date, current_num, source_id):
 
     return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
+# ============================================================
+# معالج قناة N (hebaNor) – الإصدار 3.9.5 (يدعم تعدد الأسعار)
+# ============================================================
 def hebanor_processor(text, msg_date, current_num, source_id):
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
     text = apply_general_fixes(text)
     lines = [line.strip() for line in text.split('\n') if line.strip()]
-    if len(lines) < 1:
+    if not lines:
         return default_processor(text, msg_date, current_num, source_id)
 
-    price = None
-    price_line_idx = -1
-    ignore_words = ['سم', 'مقاس', 'k', 'K', 'متر', 'ملي', 'inch', 'cm', 'mm', 'ج', 'جنيه']
-    for idx, line in enumerate(lines):
-        nums = re.findall(r'\d+', line)
-        if nums:
-            if not any(word in line for word in ['سم', 'مقاس', 'k', 'K', 'متر', 'ملي']):
-                if re.search(r'(سعر|السعر|ج|جنيه|price)', line, re.IGNORECASE) or nums:
-                    potential_price = int(nums[-1])
-                    if 15 <= potential_price <= 2000:
-                        price = potential_price
-                        price_line_idx = idx
-                        break
+    result_lines = []
+    ignore_words = ['سم', 'مقاس', 'ك', 'متر', 'ملي', 'انش', 'بوصة', '×', 'x']
 
-    if price is None:
-        all_numbers = re.findall(r'\d+', text)
-        for num in reversed(all_numbers):
-            val = int(num)
-            if 15 <= val <= 2000:
-                price = val
-                for idx, line in enumerate(lines):
-                    if str(val) in line:
-                        price_line_idx = idx
-                        break
-                if price:
-                    break
+    for line in lines:
+        # تحويل الأرقام إلى إنجليزية للكشف
+        line_eng = normalize_numbers(line)
+        # البحث عن نمط: رقم متبوع بـ "ج" أو "جنيه"
+        price_match = re.search(r'(\d+)\s*ج', line_eng)
+        if price_match:
+            price = int(price_match.group(1))
+            if 15 <= price <= 2000:
+                # التأكد من عدم وجود كلمات ممنوعة تشير إلى مقاسات
+                if not any(word in line for word in ignore_words):
+                    # حساب السعر الجديد
+                    multiplier = get_multiplier(price)
+                    new_price = round_up_to_nearest_5(price * multiplier)
+                    price_ar = convert_to_arabic_numbers(new_price)
+                    # استبدال السطر بسعر التجزئة
+                    result_lines.append(f"السعر : 💰 {price_ar} ج 🔥")
+                    continue
+        # إذا لم يكن سطر سعر، نضيفه كما هو
+        result_lines.append(line)
 
-    if price is None:
-        return default_processor(text, msg_date, current_num, source_id)
-
-    multiplier = get_multiplier(price)
-    new_price = round_up_to_nearest_5(price * multiplier)
-
-    clean_lines = []
-    for idx, line in enumerate(lines):
-        if idx == price_line_idx:
-            continue
-        clean_lines.append(line)
-
-    description = "\n".join(clean_lines).strip()
+    # إضافة الكود في النهاية
     my_code = generate_code(source_id, msg_date, current_num)
-    price_ar = convert_to_arabic_numbers(new_price)
-
-    if description:
-        result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
-    else:
-        result_lines = [f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
+    result_lines.append(f"الكود : 🔖 {my_code}")
 
     return "\n".join(result_lines)
 
+# ============================================================
+# معالج القناة K (معدل) - الإصدار 3.9.4
+# ============================================================
 def channel_k_processor(text, msg_date, current_num, source_id):
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
+
+    # منع النص بالكامل إذا احتوى على أي رقم هاتف موبايل مصري (11 رقمًا، يبدأ بـ 010, 011, 012, 015)
+    if re.search(r'\b01[0125]\d{8}\b', text):
+        return None  # تجاهل المنشور نهائياً
 
     for phone in BLOCK_KEYWORDS:
         if re.search(rf'\b{re.escape(phone)}\b', text):
@@ -995,7 +984,7 @@ PROCESSOR_MAP = {
     "aymanelawamy123": ayman_processor,
     -1001443297771: organizer_processor,
     -1001448553593: channel_i_processor,
-    "hebaNor": hebanor_processor,
+    "hebaNor": hebanor_processor,          # تم ربط المعالج الجديد
     -1001230500963: channel_k_processor,
 }
 
@@ -1137,13 +1126,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.3 (Channel I: preserve emojis, add : and 💰 to price line) Ready!"
+    return "Retail Pro Bot v3.9.5 (Channel N: multi-price support, Channel K: block mobile numbers, Channel I: preserve emojis) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.3 يبدأ...")   # <-- تم التحديث إلى 3.9.3
+    print("🚀 Retail Pro Bot v3.9.5 يبدأ... (دعم تعدد الأسعار في قناة N)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
