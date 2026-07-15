@@ -778,7 +778,7 @@ def channel_k_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 # ============================================================
-# معالج القناة I (معدل) – الإصدار 3.9.10
+# معالج القناة I (معدل) – الإصدار 3.9.11
 # ============================================================
 def channel_i_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -837,12 +837,8 @@ def channel_i_processor(text, msg_date, current_num, source_id):
             clean_description.append(line)
     description = "\n".join(clean_description).strip()
 
-    # إضافة اسم المنتج إلى الوصف إذا لم يكن موجوداً
-    # (لكن في هذا المثال هو موجود بالفعل في سطر آخر، لذا لن نكرره)
-    if description and product_name not in description:
-        description = f"{product_name}\n{description}"
+    # لا نضيف product_name إلى الوصف (تم حذف الجزء الذي كان يضيفه)
 
-    # النتيجة: الوصف، الكود، ثم سطر السعر منفصلاً
     result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
     return "\n".join(result_lines)
 
@@ -997,13 +993,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.10 (Channel I: separate price line with 'السعر') Ready!"
+    return "Retail Pro Bot v3.9.11 (Channel I: preserve original order, no extra product name) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.10 يبدأ... (تعديل معالج القناة I لفصل السعر)")
+    print("🚀 Retail Pro Bot v3.9.11 يبدأ... (تحسين ترتيب النص في القناة I)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
