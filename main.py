@@ -505,9 +505,6 @@ def sasa_processor(text, msg_date, current_num, source_id):
     else:
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
-# ============================================================
-# معالج قناة ayselstore55 (معدل) – الإصدار 3.9.9
-# ============================================================
 def aysel_processor(text, msg_date, current_num, source_id):
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
@@ -550,42 +547,30 @@ def aysel_processor(text, msg_date, current_num, source_id):
         # باقي الأسطر نعتبرها وصفاً
         description_lines.append(line)
 
-    # بناء النتيجة
     result_lines = []
     result_lines.extend(description_lines)
 
     my_code = generate_code(source_id, msg_date, current_num)
     result_lines.append(f"الكود : 🔖 {my_code}")
 
-    # القاعدة الجديدة:
-    # 1. إذا كان عدد الأسعار الفردية >= 2 → استخدمها (تجاهل العرض الخاص)
-    # 2. إذا كان عدد الأسعار الفردية == 1 ووجد عرض خاص → استخدم العرض الخاص
-    # 3. إذا كان عدد الأسعار الفردية == 1 ولا يوجد عرض خاص → استخدم السعر الفردي
-    # 4. إذا لم يوجد أسعار فردية ووجد عرض خاص → استخدم العرض الخاص
-
     if len(individual_prices) >= 2:
-        # حالة تعدد الأسعار الفردية
         for label, price in individual_prices:
             retail_price = RETAIL_MAPPING.get(price, price)
             price_ar = convert_to_arabic_numbers(retail_price)
             result_lines.append(f"{label} : 💰 {price_ar} ج 🔥")
     elif len(individual_prices) == 1 and special_offer_price is not None:
-        # سعر فردي واحد + عرض خاص → استخدم العرض الخاص
         retail_price = RETAIL_MAPPING.get(special_offer_price, special_offer_price)
         price_ar = convert_to_arabic_numbers(retail_price)
         result_lines.append(f"السعر : 💰 {price_ar} ج 🔥")
     elif len(individual_prices) == 1:
-        # سعر فردي واحد فقط
         label, price = individual_prices[0]
         retail_price = RETAIL_MAPPING.get(price, price)
         price_ar = convert_to_arabic_numbers(retail_price)
         result_lines.append(f"{label} : 💰 {price_ar} ج 🔥")
     elif special_offer_price is not None:
-        # لا يوجد أسعار فردية، ولكن يوجد عرض خاص
         retail_price = RETAIL_MAPPING.get(special_offer_price, special_offer_price)
         price_ar = convert_to_arabic_numbers(retail_price)
         result_lines.append(f"السعر : 💰 {price_ar} ج 🔥")
-    # إذا لم يوجد أي سعر، لا نضيف شيئاً
 
     return "\n".join(result_lines)
 
@@ -792,6 +777,9 @@ def channel_k_processor(text, msg_date, current_num, source_id):
 
     return "\n".join(result_lines)
 
+# ============================================================
+# معالج القناة I (معدل) – الإصدار 3.9.10
+# ============================================================
 def channel_i_processor(text, msg_date, current_num, source_id):
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
@@ -807,7 +795,7 @@ def channel_i_processor(text, msg_date, current_num, source_id):
         converted_lines.append(line)
 
     price_pattern = re.compile(r'(.*?)\s*ب\s*(\d+)\s*(?:ج|جنيه)')
-    products = []
+    products = []  # (product_name, price, original_line_index)
     price_line_indices = []
 
     for idx, line in enumerate(converted_lines):
@@ -837,18 +825,25 @@ def channel_i_processor(text, msg_date, current_num, source_id):
             result_lines.append(f"{name} بسعر : 💰 {price_ar} ج 🔥")
         return "\n".join(result_lines)
 
+    # منتج واحد
     product_name, price, idx = products[0]
     retail = RETAIL_MAPPING.get(price, price)
     price_ar = convert_to_arabic_numbers(retail)
-    modified_price_line = f"{product_name} ب : 💰 {price_ar} ج 🔥"
 
+    # بناء الوصف: جميع الأسطر ما عدا سطر السعر
     clean_description = []
     for i, line in enumerate(converted_lines):
         if i != idx:
             clean_description.append(line)
     description = "\n".join(clean_description).strip()
 
-    result_lines = [description, f"الكود : 🔖 {my_code}", modified_price_line]
+    # إضافة اسم المنتج إلى الوصف إذا لم يكن موجوداً
+    # (لكن في هذا المثال هو موجود بالفعل في سطر آخر، لذا لن نكرره)
+    if description and product_name not in description:
+        description = f"{product_name}\n{description}"
+
+    # النتيجة: الوصف، الكود، ثم سطر السعر منفصلاً
+    result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
     return "\n".join(result_lines)
 
 # ==========================================
@@ -1002,13 +997,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.9 (Aysel: multi-price logic fixed) Ready!"
+    return "Retail Pro Bot v3.9.10 (Channel I: separate price line with 'السعر') Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.9 يبدأ... (تم تعديل منطق الأسعار في Aysel)")
+    print("🚀 Retail Pro Bot v3.9.10 يبدأ... (تعديل معالج القناة I لفصل السعر)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
