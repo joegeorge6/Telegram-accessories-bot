@@ -778,7 +778,7 @@ def channel_k_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 # ============================================================
-# معالج القناة I (معدل) – الإصدار 3.9.11
+# معالج القناة I (معدل) – الإصدار 3.9.12
 # ============================================================
 def channel_i_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -796,7 +796,6 @@ def channel_i_processor(text, msg_date, current_num, source_id):
 
     price_pattern = re.compile(r'(.*?)\s*ب\s*(\d+)\s*(?:ج|جنيه)')
     products = []  # (product_name, price, original_line_index)
-    price_line_indices = []
 
     for idx, line in enumerate(converted_lines):
         match = price_pattern.search(line)
@@ -805,41 +804,46 @@ def channel_i_processor(text, msg_date, current_num, source_id):
             price = int(match.group(2))
             if product_name:
                 products.append((product_name, price, idx))
-                price_line_indices.append(idx)
 
     if not products:
         return default_processor(text, msg_date, current_num, source_id)
 
     my_code = generate_code(source_id, msg_date, current_num)
 
-    if len(products) > 1:
-        clean_description = []
-        for idx, line in enumerate(converted_lines):
-            if idx not in price_line_indices:
-                clean_description.append(line)
-        description = "\n".join(clean_description).strip()
-        result_lines = [description, f"الكود : 🔖 {my_code}"]
-        for name, price, _ in products:
-            retail = RETAIL_MAPPING.get(price, price)
-            price_ar = convert_to_arabic_numbers(retail)
-            result_lines.append(f"{name} بسعر : 💰 {price_ar} ج 🔥")
-        return "\n".join(result_lines)
+    # بناء قائمة جديدة من الأسطر المعدلة
+    new_lines = []
+    price_lines_for_result = []  # سنخزن فيها أسعار التجزئة لطباعتها بعد الكود
 
-    # منتج واحد
-    product_name, price, idx = products[0]
-    retail = RETAIL_MAPPING.get(price, price)
-    price_ar = convert_to_arabic_numbers(retail)
+    for idx, line in enumerate(converted_lines):
+        found = False
+        for product_name, price, original_idx in products:
+            if original_idx == idx:
+                # هذا سطر سعر، نستبدله بالوصف فقط (بدون "ب" والسعر)
+                new_lines.append(product_name)
+                # نحسب سعر التجزئة
+                retail_price = RETAIL_MAPPING.get(price, price)
+                price_ar = convert_to_arabic_numbers(retail_price)
+                price_lines_for_result.append(price_ar)
+                found = True
+                break
+        if not found:
+            # هذا سطر عادي، نضيفه كما هو
+            new_lines.append(line)
 
-    # بناء الوصف: جميع الأسطر ما عدا سطر السعر
-    clean_description = []
-    for i, line in enumerate(converted_lines):
-        if i != idx:
-            clean_description.append(line)
-    description = "\n".join(clean_description).strip()
+    description = "\n".join(new_lines).strip()
 
-    # لا نضيف product_name إلى الوصف (تم حذف الجزء الذي كان يضيفه)
+    # بناء النتيجة: الوصف، الكود، ثم سطر السعر الجديد
+    result_lines = [description, f"الكود : 🔖 {my_code}"]
 
-    result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
+    # إذا كان هناك أكثر من منتج، نضيف لكل منتج سطر سعر
+    if len(price_lines_for_result) > 1:
+        for i, price_ar in enumerate(price_lines_for_result):
+            product_name = products[i][0]
+            result_lines.append(f"{product_name} : 💰 {price_ar} ج 🔥")
+    else:
+        # منتج واحد: نضيف سطر السعر بشكل منفصل
+        result_lines.append(f"السعر : 💰 {price_lines_for_result[0]} ج 🔥")
+
     return "\n".join(result_lines)
 
 # ==========================================
@@ -993,13 +997,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.11 (Channel I: preserve original order, no extra product name) Ready!"
+    return "Retail Pro Bot v3.9.12 (Channel I: keep product description, remove only 'ب' and price) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.11 يبدأ... (تحسين ترتيب النص في القناة I)")
+    print("🚀 Retail Pro Bot v3.9.12 يبدأ... (تحسين معالج القناة I: الاحتفاظ بالوصف)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
