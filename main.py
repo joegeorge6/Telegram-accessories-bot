@@ -505,7 +505,7 @@ def sasa_processor(text, msg_date, current_num, source_id):
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 # ============================================================
-# معالج قناة ayselstore55 (معدل) – الإصدار 3.9.14
+# معالج قناة ayselstore55 (معدل) – الإصدار 3.9.16
 # ============================================================
 def aysel_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -521,85 +521,94 @@ def aysel_processor(text, msg_date, current_num, source_id):
         return default_processor(text, msg_date, current_num, source_id)
 
     description_lines = []
-    individual_prices = []  # (label, price)
+    extracted_prices = []
     special_offer_price = None
-    fallback_price = None  # للسعر البسيط (رقم فقط أو رقم مع إيموجي)
 
     for line in lines:
-        # البحث عن سعر فردي (مثل "سعر الفضة: 65" أو "سعر القطعه 45")
-        individual_match = re.search(r'(سعر\s*(?:الفضة|الذهب|القطعة|القطعه|السلسله|السلسلة|الانسيال|السلفر|الجولد))\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
-        if individual_match:
-            label = individual_match.group(1).strip()
-            price = int(individual_match.group(2))
+        # نمط 1: "ب" + رقم + "ج" أو "جنيه" (مثل "ب 25 جنيه")
+        match = re.search(r'(.*?)\s*ب\s*(\d+)\s*(?:ج|جنيه)', line, re.IGNORECASE)
+        if match:
+            desc_part = match.group(1).strip()
+            price = int(match.group(2))
             if 15 <= price <= 2000:
-                individual_prices.append((label, price))
-            continue
+                extracted_prices.append(price)
+                if desc_part:
+                    description_lines.append(desc_part)
+                continue
 
-        # البحث عن "عرض خاص" أو "القطعتين بـ" أو "القطعتين ب"
-        special_match = re.search(r'(?:عرض خاص|القطعتين بـ|القطعتين ب)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
-        if special_match:
-            price = int(special_match.group(1))
+        # نمط 2: "سعر" مع تسمية (مثل "سعر القطعه 65" أو "سعر الفرده الواحده ب 40")
+        match = re.search(r'(.*?)\s*سعر\s*(.*?)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
+        if match:
+            desc_part = match.group(1).strip()
+            label = match.group(2).strip()
+            price = int(match.group(3))
+            if 15 <= price <= 2000:
+                extracted_prices.append(price)
+                if desc_part:
+                    description_lines.append(desc_part)
+                if label and not re.search(r'ب', label, re.IGNORECASE):
+                    label_clean = re.sub(r'\s*ب\s*\d+\s*(?:ج|جنيه).*$', '', label, flags=re.IGNORECASE).strip()
+                    if label_clean:
+                        description_lines.append(label_clean)
+                continue
+
+        # نمط 3: "عرض" + رقم (مثل "عرض 25")
+        match = re.search(r'عرض\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
+        if match:
+            price = int(match.group(1))
             if 15 <= price <= 2000:
                 special_offer_price = price
             continue
 
-        # البحث عن "الرمز" وتجاهله
+        # نمط 4: "الطقم" + رقم (مثل "الطقم 6 قطع سعر الطقم 150")
+        match = re.search(r'(الطقم\s*\d+\s*قطع)\s*سعر\s*الطقم\s*(\d+)', line, re.IGNORECASE)
+        if match:
+            desc = match.group(1).strip()
+            price = int(match.group(2))
+            if 15 <= price <= 2000:
+                extracted_prices.append(price)
+                description_lines.append(desc)
+            continue
+
+        # نمط 5: "الرمز" وتجاهله
         if re.search(r'الرمز\s*[:：]', line, re.IGNORECASE):
             continue
 
-        # البحث عن رقم بسيط (مثل "135" أو "135 💕💕💕")
-        # نتحقق أن السطر لا يحتوي على كلمات ممنوعة (مقاس، سم، إلخ)
-        simple_price_match = re.search(r'^(\d+)\s*$', line.strip())
-        if not simple_price_match:
-            # قد يكون السطر يحتوي على إيموجي بعد الرقم
-            simple_price_match = re.search(r'^(\d+)\s*[\U0001F300-\U0001FAFF\s]*$', line.strip())
+        # نمط 6: رقم بسيط (مثل "55" أو "55 💕")
+        simple_match = re.search(r'^(\d+)\s*$', line.strip())
+        if not simple_match:
+            simple_match = re.search(r'^(\d+)\s*[\U0001F300-\U0001FAFF\s]*$', line.strip())
         
-        if simple_price_match and not re.search(r'سم|مقاس|ك|متر|ملي|انش|بوصة|×|x', line, re.IGNORECASE):
-            price = int(simple_price_match.group(1))
+        if simple_match and not re.search(r'سم|مقاس|ك|متر|ملي|انش|بوصة|×|x', line, re.IGNORECASE):
+            price = int(simple_match.group(1))
             if 15 <= price <= 2000:
-                fallback_price = price
-            # نتجاهل السطر ولا نضيفه إلى الوصف
+                extracted_prices.append(price)
             continue
 
-        # باقي الأسطر نعتبرها وصفاً (مقاسات، عيارات، أوصاف، إلخ)
+        # باقي الأسطر نعتبرها وصفاً
         description_lines.append(line)
 
-    result_lines = []
-    result_lines.extend(description_lines)
+    # تنظيف الوصف من الأسطر الفارغة
+    description = "\n".join([line for line in description_lines if line.strip()])
 
     my_code = generate_code(source_id, msg_date, current_num)
-    result_lines.append(f"الكود : 🔖 {my_code}")
 
-    # تحديد السعر النهائي حسب الأولوية:
-    # 1. أسعار فردية (2 أو أكثر)
-    # 2. سعر فردي واحد + عرض خاص → استخدام العرض الخاص
-    # 3. سعر فردي واحد فقط
-    # 4. عرض خاص فقط
-    # 5. سعر بسيط (رقم فقط) كحل أخير
+    # تحديد السعر النهائي
+    final_price = None
+    
+    # إذا كان هناك عرض خاص، نستخدمه
+    if special_offer_price is not None:
+        final_price = special_offer_price
+    # وإلا نستخدم أول سعر مستخرج
+    elif extracted_prices:
+        final_price = extracted_prices[0]
 
-    if len(individual_prices) >= 2:
-        for label, price in individual_prices:
-            retail_price = RETAIL_MAPPING.get(price, price)
-            price_ar = convert_to_arabic_numbers(retail_price)
-            result_lines.append(f"{label} : 💰 {price_ar} ج 🔥")
-    elif len(individual_prices) == 1 and special_offer_price is not None:
-        retail_price = RETAIL_MAPPING.get(special_offer_price, special_offer_price)
+    result_lines = [description, f"الكود : 🔖 {my_code}"]
+
+    if final_price is not None:
+        retail_price = RETAIL_MAPPING.get(final_price, final_price)
         price_ar = convert_to_arabic_numbers(retail_price)
         result_lines.append(f"السعر : 💰 {price_ar} ج 🔥")
-    elif len(individual_prices) == 1:
-        label, price = individual_prices[0]
-        retail_price = RETAIL_MAPPING.get(price, price)
-        price_ar = convert_to_arabic_numbers(retail_price)
-        result_lines.append(f"{label} : 💰 {price_ar} ج 🔥")
-    elif special_offer_price is not None:
-        retail_price = RETAIL_MAPPING.get(special_offer_price, special_offer_price)
-        price_ar = convert_to_arabic_numbers(retail_price)
-        result_lines.append(f"السعر : 💰 {price_ar} ج 🔥")
-    elif fallback_price is not None:
-        retail_price = RETAIL_MAPPING.get(fallback_price, fallback_price)
-        price_ar = convert_to_arabic_numbers(retail_price)
-        result_lines.append(f"السعر : 💰 {price_ar} ج 🔥")
-    # إذا لم يوجد أي سعر، نترك النص بدون سعر
 
     return "\n".join(result_lines)
 
@@ -1031,13 +1040,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.14 (Aysel: ignore simple price lines, keep descriptions, sizes, karats) Ready!"
+    return "Retail Pro Bot v3.9.16 (Aysel: unified price handling for all patterns) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.14 يبدأ... (النسخة النهائية المستقرة)")
+    print("🚀 Retail Pro Bot v3.9.16 يبدأ... (توحيد معالجة الأسعار في قناة Aysel)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
