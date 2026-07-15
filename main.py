@@ -172,7 +172,6 @@ def generate_code(source_id, msg_date, current_num):
     return f"{prefix}{current_num:02d}{today_str}"
 
 def get_multiplier(price):
-    """تحديد المضاعف بناءً على السعر الأصلي (لقنوات N و K)"""
     if 80 <= price <= 95:
         return 2.7
     elif 100 <= price <= 150:
@@ -242,7 +241,7 @@ def is_number_emoji_line(line):
     return False
 
 # ==========================================
-# 3. المعالجة الأساسية للنص (النسخة الأصلية)
+# 3. المعالجة الأساسية للنص
 # ==========================================
 def build_text_original(original_text, source_id, msg_date, current_num):
     if not original_text: return ""
@@ -505,6 +504,9 @@ def sasa_processor(text, msg_date, current_num, source_id):
     else:
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
+# ============================================================
+# معالج قناة ayselstore55 (معدل) – الإصدار 3.9.14
+# ============================================================
 def aysel_processor(text, msg_date, current_num, source_id):
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
@@ -521,6 +523,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
     description_lines = []
     individual_prices = []  # (label, price)
     special_offer_price = None
+    fallback_price = None  # للسعر البسيط (رقم فقط أو رقم مع إيموجي)
 
     for line in lines:
         # البحث عن سعر فردي (مثل "سعر الفضة: 65" أو "سعر القطعه 45")
@@ -532,7 +535,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
                 individual_prices.append((label, price))
             continue
 
-        # البحث عن "عرض خاص" أو "القطعتين بـ"
+        # البحث عن "عرض خاص" أو "القطعتين بـ" أو "القطعتين ب"
         special_match = re.search(r'(?:عرض خاص|القطعتين بـ|القطعتين ب)\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
         if special_match:
             price = int(special_match.group(1))
@@ -544,7 +547,21 @@ def aysel_processor(text, msg_date, current_num, source_id):
         if re.search(r'الرمز\s*[:：]', line, re.IGNORECASE):
             continue
 
-        # باقي الأسطر نعتبرها وصفاً
+        # البحث عن رقم بسيط (مثل "135" أو "135 💕💕💕")
+        # نتحقق أن السطر لا يحتوي على كلمات ممنوعة (مقاس، سم، إلخ)
+        simple_price_match = re.search(r'^(\d+)\s*$', line.strip())
+        if not simple_price_match:
+            # قد يكون السطر يحتوي على إيموجي بعد الرقم
+            simple_price_match = re.search(r'^(\d+)\s*[\U0001F300-\U0001FAFF\s]*$', line.strip())
+        
+        if simple_price_match and not re.search(r'سم|مقاس|ك|متر|ملي|انش|بوصة|×|x', line, re.IGNORECASE):
+            price = int(simple_price_match.group(1))
+            if 15 <= price <= 2000:
+                fallback_price = price
+            # نتجاهل السطر ولا نضيفه إلى الوصف
+            continue
+
+        # باقي الأسطر نعتبرها وصفاً (مقاسات، عيارات، أوصاف، إلخ)
         description_lines.append(line)
 
     result_lines = []
@@ -552,6 +569,13 @@ def aysel_processor(text, msg_date, current_num, source_id):
 
     my_code = generate_code(source_id, msg_date, current_num)
     result_lines.append(f"الكود : 🔖 {my_code}")
+
+    # تحديد السعر النهائي حسب الأولوية:
+    # 1. أسعار فردية (2 أو أكثر)
+    # 2. سعر فردي واحد + عرض خاص → استخدام العرض الخاص
+    # 3. سعر فردي واحد فقط
+    # 4. عرض خاص فقط
+    # 5. سعر بسيط (رقم فقط) كحل أخير
 
     if len(individual_prices) >= 2:
         for label, price in individual_prices:
@@ -571,9 +595,17 @@ def aysel_processor(text, msg_date, current_num, source_id):
         retail_price = RETAIL_MAPPING.get(special_offer_price, special_offer_price)
         price_ar = convert_to_arabic_numbers(retail_price)
         result_lines.append(f"السعر : 💰 {price_ar} ج 🔥")
+    elif fallback_price is not None:
+        retail_price = RETAIL_MAPPING.get(fallback_price, fallback_price)
+        price_ar = convert_to_arabic_numbers(retail_price)
+        result_lines.append(f"السعر : 💰 {price_ar} ج 🔥")
+    # إذا لم يوجد أي سعر، نترك النص بدون سعر
 
     return "\n".join(result_lines)
 
+# ============================================================
+# معالج قناة aymanelawamy123
+# ============================================================
 def ayman_processor(text, msg_date, current_num, source_id):
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
@@ -612,6 +644,9 @@ def ayman_processor(text, msg_date, current_num, source_id):
     else:
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
+# ============================================================
+# معالج قناة organizer (-1001443297771)
+# ============================================================
 def organizer_processor(text, msg_date, current_num, source_id):
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
@@ -696,6 +731,9 @@ def organizer_processor(text, msg_date, current_num, source_id):
 
     return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
+# ============================================================
+# معالج قناة N (hebaNor)
+# ============================================================
 def hebanor_processor(text, msg_date, current_num, source_id):
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
@@ -727,6 +765,9 @@ def hebanor_processor(text, msg_date, current_num, source_id):
 
     return "\n".join(result_lines)
 
+# ============================================================
+# معالج قناة K (-1001230500963)
+# ============================================================
 def channel_k_processor(text, msg_date, current_num, source_id):
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
@@ -778,7 +819,7 @@ def channel_k_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 # ============================================================
-# معالج القناة I (معدل) – الإصدار 3.9.12
+# معالج القناة I (-1001448553593) – الإصدار 3.9.12
 # ============================================================
 def channel_i_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -810,38 +851,31 @@ def channel_i_processor(text, msg_date, current_num, source_id):
 
     my_code = generate_code(source_id, msg_date, current_num)
 
-    # بناء قائمة جديدة من الأسطر المعدلة
     new_lines = []
-    price_lines_for_result = []  # سنخزن فيها أسعار التجزئة لطباعتها بعد الكود
+    price_lines_for_result = []
 
     for idx, line in enumerate(converted_lines):
         found = False
         for product_name, price, original_idx in products:
             if original_idx == idx:
-                # هذا سطر سعر، نستبدله بالوصف فقط (بدون "ب" والسعر)
                 new_lines.append(product_name)
-                # نحسب سعر التجزئة
                 retail_price = RETAIL_MAPPING.get(price, price)
                 price_ar = convert_to_arabic_numbers(retail_price)
                 price_lines_for_result.append(price_ar)
                 found = True
                 break
         if not found:
-            # هذا سطر عادي، نضيفه كما هو
             new_lines.append(line)
 
     description = "\n".join(new_lines).strip()
 
-    # بناء النتيجة: الوصف، الكود، ثم سطر السعر الجديد
     result_lines = [description, f"الكود : 🔖 {my_code}"]
 
-    # إذا كان هناك أكثر من منتج، نضيف لكل منتج سطر سعر
     if len(price_lines_for_result) > 1:
         for i, price_ar in enumerate(price_lines_for_result):
             product_name = products[i][0]
             result_lines.append(f"{product_name} : 💰 {price_ar} ج 🔥")
     else:
-        # منتج واحد: نضيف سطر السعر بشكل منفصل
         result_lines.append(f"السعر : 💰 {price_lines_for_result[0]} ج 🔥")
 
     return "\n".join(result_lines)
@@ -997,13 +1031,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.12 (Channel I: keep product description, remove only 'ب' and price) Ready!"
+    return "Retail Pro Bot v3.9.14 (Aysel: ignore simple price lines, keep descriptions, sizes, karats) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.12 يبدأ... (تحسين معالج القناة I: الاحتفاظ بالوصف)")
+    print("🚀 Retail Pro Bot v3.9.14 يبدأ... (النسخة النهائية المستقرة)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
