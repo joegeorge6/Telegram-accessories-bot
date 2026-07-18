@@ -54,7 +54,8 @@ P_CODE_TRANSLATION = {
     "CP": "كوليه",
     "E": "حلق",
     "R": "خاتم",
-    "B": "اسورة"
+    "B": "اسورة",
+    "MR": "مراية",
 }
 
 # ==========================================
@@ -733,7 +734,7 @@ def ayman_processor(text, msg_date, current_num, source_id):
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 # ============================================================
-# معالج قناة organizer (-1001443297771)
+# معالج قناة organizer (-1001443297771) – الإصدار 3.9.22
 # ============================================================
 def organizer_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -805,13 +806,17 @@ def organizer_processor(text, msg_date, current_num, source_id):
     else:
         item_name = prefix_letter
 
-    if original_desc:
-        if item_name not in original_desc:
-            description = f"{item_name} {original_desc}"
-        else:
-            description = original_desc
+    # وصف خاص لكود MR
+    if prefix_letter == "MR":
+        description = "مراية شيك 🪞✨\nلمستك الأخيرة قبل كل خروجة 💖\nتكمّل ركن أناقتك بكل شياكة 👌"
     else:
-        description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
+        if original_desc:
+            if item_name not in original_desc:
+                description = f"{item_name} {original_desc}"
+            else:
+                description = original_desc
+        else:
+            description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
 
     retail_price = RETAIL_MAPPING.get(price, price)
     price_ar = convert_to_arabic_numbers(retail_price)
@@ -987,21 +992,17 @@ def channel_in_processor(text, msg_date, current_num, source_id):
     description_lines = []
 
     for line in lines:
-        # استخراج السعر من Price
         match = re.search(r'Price\s*(\d+)', line, re.IGNORECASE)
         if match:
             price = int(match.group(1))
             continue
 
-        # حذف سطر Code
         if re.search(r'Code\s*\d+', line, re.IGNORECASE):
             continue
 
-        # حذف سطر "سعر جديد"
         if re.search(r'سعر جديد', line):
             continue
 
-        # تصحيح "qulity" → "quality"
         if re.search(r'qulity', line, re.IGNORECASE):
             line = re.sub(r'qulity', 'quality', line, flags=re.IGNORECASE)
 
@@ -1010,7 +1011,6 @@ def channel_in_processor(text, msg_date, current_num, source_id):
     if price is None:
         return default_processor(text, msg_date, current_num, source_id)
 
-    # حساب السعر الجديد
     multiplier = get_multiplier(price)
     new_price = round_up_to_nearest_5(price * multiplier)
 
@@ -1038,13 +1038,11 @@ def channel_r_processor(text, msg_date, current_num, source_id):
     description_lines = []
 
     for line in lines:
-        # استخراج السعر من Price
         match = re.search(r'Price\s*(\d+)', line, re.IGNORECASE)
         if match:
             price = int(match.group(1))
             continue
 
-        # حذف سطر Code
         if re.search(r'Code\s*\d+', line, re.IGNORECASE):
             continue
 
@@ -1053,7 +1051,6 @@ def channel_r_processor(text, msg_date, current_num, source_id):
     if price is None:
         return default_processor(text, msg_date, current_num, source_id)
 
-    # حساب السعر الجديد
     multiplier = get_multiplier(price)
     new_price = round_up_to_nearest_5(price * multiplier)
 
@@ -1218,13 +1215,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.20 (All channels: Aysel 8 handlers, I, K, N, IN, R) Ready!"
+    return "Retail Pro Bot v3.9.22 (MR fixed description for mirrors) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.20 يبدأ... (جميع القنوات)")
+    print("🚀 Retail Pro Bot v3.9.22 يبدأ... (نص ثابت للمرايات MR)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
