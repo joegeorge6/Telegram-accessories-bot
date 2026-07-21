@@ -54,8 +54,7 @@ P_CODE_TRANSLATION = {
     "CP": "كوليه",
     "E": "حلق",
     "R": "خاتم",
-    "B": "اسورة",
-    "MR": "مراية",
+    "B": "اسورة"
 }
 
 # ==========================================
@@ -127,9 +126,7 @@ SUPPLIER_PREFIX_MAP = {
     "miyokowatches22": "M", -1001132261086: "P", -1001448553593: "I",
     -1001682055192: "H", -1001443297771: "P",
     "hebaNor": "N",
-    -1001230500963: "K",
-    "ronybags": "R",
-    "irona44": "IN",
+    -1001230500963: "K"
 }
 
 def _sync_init_db():
@@ -508,7 +505,7 @@ def sasa_processor(text, msg_date, current_num, source_id):
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 # ============================================================
-# معالج قناة ayselstore55 – الإصدار 3.9.20 (8 معالجات مستقلة)
+# معالج قناة ayselstore55 – الإصدار 3.9.20 (مع 10 معالجات)
 # ============================================================
 def aysel_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -641,50 +638,88 @@ def aysel_processor(text, msg_date, current_num, source_id):
             return "\n".join(result_lines)
 
     # معالج 7: ايطاليان برسلت (سعران منفصلان)
-    if any('ايطاليان برسلت' in line for line in lines) and any('الاسوره السلفر' in line for line in lines) and any('الاسوره الجولد' in line for line in lines):
-        price1 = None
-        price2 = None
-        label1 = None
-        label2 = None
+    if any('ايطاليان برسلت' in line for line in lines):
+        prices = []
+        labels = []
         description_lines = []
         for line in lines:
-            match1 = re.search(r'(الاسوره السلفر[^\d]*)\s*ب\s*(\d+)', line, re.IGNORECASE)
+            if 'ايطاليان برسلت' in line:
+                description_lines.append(line)
+                continue
+            match1 = re.search(r'(الاسوره\s*السلفر\s*بالاتشارمز)\s*ب\s*(\d+)', line, re.IGNORECASE)
+            match2 = re.search(r'(الاسوره\s*الجولد\s*بالاتشارمز)\s*(\d+)', line, re.IGNORECASE)
             if match1:
-                label1 = match1.group(1).strip()
-                price1 = int(match1.group(2))
-                continue
-            match2 = re.search(r'(الاسوره الجولد[^\d]*)\s*(\d+)', line, re.IGNORECASE)
-            if match2:
-                label2 = match2.group(1).strip()
-                price2 = int(match2.group(2))
-                continue
-            description_lines.append(line)
-        if price1 is not None and price2 is not None and label1 is not None and label2 is not None:
+                labels.append(match1.group(1).strip())
+                prices.append(int(match1.group(2)))
+            elif match2:
+                labels.append(match2.group(1).strip())
+                prices.append(int(match2.group(2)))
+            else:
+                description_lines.append(line)
+        if prices and labels and len(prices) == 2:
             description = "\n".join(description_lines).strip()
-            retail_price1 = RETAIL_MAPPING.get(price1, price1)
-            retail_price2 = RETAIL_MAPPING.get(price2, price2)
-            price_ar1 = convert_to_arabic_numbers(retail_price1)
-            price_ar2 = convert_to_arabic_numbers(retail_price2)
             result_lines = [description, f"الكود : 🔖 {my_code}"]
-            result_lines.append(f"{label1} بسعر : 💰 {price_ar1} ج 🔥")
-            result_lines.append(f"{label2} بسعر : 💰 {price_ar2} ج 🔥")
+            for label, price in zip(labels, prices):
+                retail = RETAIL_MAPPING.get(price, price)
+                price_ar = convert_to_arabic_numbers(retail)
+                result_lines.append(f"{label} بسعر : 💰 {price_ar} ج 🔥")
             return "\n".join(result_lines)
 
     # معالج 8: سلسله حروف (سعر فردي + عرض خاص)
     if any('سلسله حروف' in line for line in lines) and any('سعر القطعه' in line for line in lines) and any('عرض خاص' in line for line in lines):
-        price = None
+        price_offer = None
         description_lines = []
         for line in lines:
             match = re.search(r'عرض\s*خاص\s*(\d+)', line, re.IGNORECASE)
             if match:
-                price = int(match.group(1))
+                price_offer = int(match.group(1))
                 continue
-            if re.search(r'سعر\s*القطعه\s*[:：]?\s*\d+', line, re.IGNORECASE):
+            if re.search(r'سعر\s*القطعه', line, re.IGNORECASE):
                 continue
             description_lines.append(line)
-        if price is not None:
+        if price_offer is not None:
             description = "\n".join(description_lines).strip()
-            retail_price = RETAIL_MAPPING.get(price, price)
+            retail_price = RETAIL_MAPPING.get(price_offer, price_offer)
+            price_ar = convert_to_arabic_numbers(retail_price)
+            result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
+            return "\n".join(result_lines)
+
+    # معالج 9: سلسله تيفانى (سعر فردي + عرض خاص)
+    if any('سلسله تيفانى' in line for line in lines) and any('عرض خاص' in line for line in lines):
+        price_offer = None
+        description_lines = []
+        for line in lines:
+            match = re.search(r'عرض\s*خاص\s*(\d+)', line, re.IGNORECASE)
+            if match:
+                price_offer = int(match.group(1))
+                continue
+            if re.search(r'سعر\s*القطعه', line, re.IGNORECASE):
+                continue
+            description_lines.append(line)
+        if price_offer is not None:
+            description = "\n".join(description_lines).strip()
+            retail_price = RETAIL_MAPPING.get(price_offer, price_offer)
+            price_ar = convert_to_arabic_numbers(retail_price)
+            result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
+            return "\n".join(result_lines)
+
+    # معالج 10: سلسله حمصات (سعر فردي + عرض خاص + N-019)
+    if any('سلسله حمصات' in line for line in lines) and any('عرض خاص' in line for line in lines):
+        price_offer = None
+        description_lines = []
+        for line in lines:
+            match = re.search(r'عرض\s*خاص\s*(\d+)', line, re.IGNORECASE)
+            if match:
+                price_offer = int(match.group(1))
+                continue
+            if re.search(r'سعر\s*القطعه', line, re.IGNORECASE):
+                continue
+            if re.search(r'N-\d+', line):
+                continue
+            description_lines.append(line)
+        if price_offer is not None:
+            description = "\n".join(description_lines).strip()
+            retail_price = RETAIL_MAPPING.get(price_offer, price_offer)
             price_ar = convert_to_arabic_numbers(retail_price)
             result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
             return "\n".join(result_lines)
@@ -734,7 +769,7 @@ def ayman_processor(text, msg_date, current_num, source_id):
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 # ============================================================
-# معالج قناة organizer (-1001443297771) – الإصدار 3.9.22
+# معالج قناة organizer (-1001443297771)
 # ============================================================
 def organizer_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -806,17 +841,13 @@ def organizer_processor(text, msg_date, current_num, source_id):
     else:
         item_name = prefix_letter
 
-    # وصف خاص لكود MR
-    if prefix_letter == "MR":
-        description = "مراية شيك 🪞✨\nلمستك الأخيرة قبل كل خروجة 💖\nتكمّل ركن أناقتك بكل شياكة 👌"
-    else:
-        if original_desc:
-            if item_name not in original_desc:
-                description = f"{item_name} {original_desc}"
-            else:
-                description = original_desc
+    if original_desc:
+        if item_name not in original_desc:
+            description = f"{item_name} {original_desc}"
         else:
-            description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
+            description = original_desc
+    else:
+        description = f"{item_name} شيك قوي💕💕\nاستانلس بيور عيار ٣١٦ 💎💯"
 
     retail_price = RETAIL_MAPPING.get(price, price)
     price_ar = convert_to_arabic_numbers(retail_price)
@@ -825,12 +856,39 @@ def organizer_processor(text, msg_date, current_num, source_id):
     return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 # ============================================================
-# معالج قناة N (hebaNor)
+# معالج قناة N (hebaNor) – الإصدار 3.9.20
 # ============================================================
 def hebanor_processor(text, msg_date, current_num, source_id):
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
+    # معالج خاص للنمط "بدلا من" (يستخدم get_multiplier)
+    if 'بدلا من' in text:
+        lines = text.split('\n')
+        new_lines = []
+        price_found = False
+        for line in lines:
+            match = re.search(r'(\d+)\s*بدلا من\s*(\d+)', line)
+            if match:
+                price1 = int(match.group(1))
+                price2 = int(match.group(2))
+                # حساب الأسعار الجديدة باستخدام get_multiplier و round_up_to_nearest_5
+                new_price1 = round_up_to_nearest_5(price1 * get_multiplier(price1))
+                new_price2 = round_up_to_nearest_5(price2 * get_multiplier(price2))
+                price_ar1 = convert_to_arabic_numbers(new_price1)
+                price_ar2 = convert_to_arabic_numbers(new_price2)
+                new_line = f"السعر : 💰 {price_ar1} ج بدلا من {price_ar2} ج 🔥"
+                new_lines.append(new_line)
+                price_found = True
+            else:
+                new_lines.append(line)
+        if price_found:
+            description = "\n".join(new_lines).strip()
+            my_code = generate_code(source_id, msg_date, current_num)
+            result_lines = [description, f"الكود : 🔖 {my_code}"]
+            return "\n".join(result_lines)
+
+    # المعالجة العامة القديمة (للأسعار الصغيرة)
     text = apply_general_fixes(text)
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     if not lines:
@@ -912,7 +970,7 @@ def channel_k_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 # ============================================================
-# معالج القناة I (-1001448553593)
+# معالج القناة I (-1001448553593) – الإصدار 3.9.18
 # ============================================================
 def channel_i_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -929,7 +987,7 @@ def channel_i_processor(text, msg_date, current_num, source_id):
         converted_lines.append(line)
 
     price_pattern = re.compile(r'(.*?)\s*ب\s*(\d+)\s*(?:ج|جنيه)')
-    products = []
+    products = []  # (product_name, price, original_line_index)
     price_line_indices = []
 
     for idx, line in enumerate(converted_lines):
@@ -953,8 +1011,10 @@ def channel_i_processor(text, msg_date, current_num, source_id):
         found = False
         for product_name, price, original_idx in products:
             if original_idx == idx:
+                # إذا كان product_name يحتوي على "القطعه" أو "القطعة"، لا نضيفه للوصف
                 if not re.search(r'القطعه|القطعة', product_name):
                     new_lines.append(product_name)
+                # وإلا لا نضيفه (نحذف السطر كاملاً)
                 retail_price = RETAIL_MAPPING.get(price, price)
                 price_ar = convert_to_arabic_numbers(retail_price)
                 price_lines_for_result.append(price_ar)
@@ -976,92 +1036,6 @@ def channel_i_processor(text, msg_date, current_num, source_id):
 
     return "\n".join(result_lines)
 
-# ============================================================
-# معالج قناة IN (irona44)
-# ============================================================
-def channel_in_processor(text, msg_date, current_num, source_id):
-    if not text: return ""
-    if re.search(r'https?://', text, re.IGNORECASE): return None
-
-    text = apply_general_fixes(text)
-    lines = [line.strip() for line in text.split('\n') if line.strip()]
-    if len(lines) < 1:
-        return default_processor(text, msg_date, current_num, source_id)
-
-    price = None
-    description_lines = []
-
-    for line in lines:
-        match = re.search(r'Price\s*(\d+)', line, re.IGNORECASE)
-        if match:
-            price = int(match.group(1))
-            continue
-
-        if re.search(r'Code\s*\d+', line, re.IGNORECASE):
-            continue
-
-        if re.search(r'سعر جديد', line):
-            continue
-
-        if re.search(r'qulity', line, re.IGNORECASE):
-            line = re.sub(r'qulity', 'quality', line, flags=re.IGNORECASE)
-
-        description_lines.append(line)
-
-    if price is None:
-        return default_processor(text, msg_date, current_num, source_id)
-
-    multiplier = get_multiplier(price)
-    new_price = round_up_to_nearest_5(price * multiplier)
-
-    my_code = generate_code(source_id, msg_date, current_num)
-    price_ar = convert_to_arabic_numbers(new_price)
-
-    description = "\n".join(description_lines).strip()
-    result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
-
-    return "\n".join(result_lines)
-
-# ============================================================
-# معالج قناة R (ronybags)
-# ============================================================
-def channel_r_processor(text, msg_date, current_num, source_id):
-    if not text: return ""
-    if re.search(r'https?://', text, re.IGNORECASE): return None
-
-    text = apply_general_fixes(text)
-    lines = [line.strip() for line in text.split('\n') if line.strip()]
-    if len(lines) < 1:
-        return default_processor(text, msg_date, current_num, source_id)
-
-    price = None
-    description_lines = []
-
-    for line in lines:
-        match = re.search(r'Price\s*(\d+)', line, re.IGNORECASE)
-        if match:
-            price = int(match.group(1))
-            continue
-
-        if re.search(r'Code\s*\d+', line, re.IGNORECASE):
-            continue
-
-        description_lines.append(line)
-
-    if price is None:
-        return default_processor(text, msg_date, current_num, source_id)
-
-    multiplier = get_multiplier(price)
-    new_price = round_up_to_nearest_5(price * multiplier)
-
-    my_code = generate_code(source_id, msg_date, current_num)
-    price_ar = convert_to_arabic_numbers(new_price)
-
-    description = "\n".join(description_lines).strip()
-    result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
-
-    return "\n".join(result_lines)
-
 # ==========================================
 # 5. نظام النشر
 # ==========================================
@@ -1073,8 +1047,6 @@ PROCESSOR_MAP = {
     -1001448553593: channel_i_processor,
     "hebaNor": hebanor_processor,
     -1001230500963: channel_k_processor,
-    "irona44": channel_in_processor,
-    "ronybags": channel_r_processor,
 }
 
 def get_processor(source_id):
@@ -1215,13 +1187,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.22 (MR fixed description for mirrors) Ready!"
+    return "Retail Pro Bot v3.9.20 (Channel N: 'بدلا من' uses get_multiplier) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.22 يبدأ... (نص ثابت للمرايات MR)")
+    print("🚀 Retail Pro Bot v3.9.20 يبدأ... (استخدام المضاعف في 'بدلا من' بقناة N)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
