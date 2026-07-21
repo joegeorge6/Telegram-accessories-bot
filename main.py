@@ -505,7 +505,7 @@ def sasa_processor(text, msg_date, current_num, source_id):
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 # ============================================================
-# معالج قناة ayselstore55 – الإصدار 3.9.21
+# معالج قناة ayselstore55 – الإصدار 3.9.22
 # ============================================================
 def aysel_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -735,7 +735,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
                 continue
             if re.search(r'سعر\s*القطعة', line, re.IGNORECASE):
                 continue
-            # نحتفظ بالسطر الذي يبدأ بـ "عرض خاص،" لأنه وصف وليس سعر
             description_lines.append(line)
         if price_offer is not None:
             description = "\n".join(description_lines).strip()
@@ -756,6 +755,32 @@ def aysel_processor(text, msg_date, current_num, source_id):
             if re.search(r'سعر\s*القطعه', line, re.IGNORECASE):
                 continue
             description_lines.append(line)
+        if price_offer is not None:
+            description = "\n".join(description_lines).strip()
+            retail_price = RETAIL_MAPPING.get(price_offer, price_offer)
+            price_ar = convert_to_arabic_numbers(retail_price)
+            result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
+            return "\n".join(result_lines)
+
+    # معالج 13: أي نص يحتوي على سعر القطعة وعرض خاص (نمط عام)
+    # نكتشف وجود سعر القطعة وعرض خاص في أي نص
+    has_individual_price = any(re.search(r'سعر\s*القطعه|سعر\s*القطعة', line, re.IGNORECASE) for line in lines)
+    has_offer = any(re.search(r'عرض\s*خاص', line, re.IGNORECASE) for line in lines)
+    
+    if has_individual_price and has_offer:
+        price_offer = None
+        description_lines = []
+        for line in lines:
+            # البحث عن العرض الخاص
+            match = re.search(r'عرض\s*خاص\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
+            if match:
+                price_offer = int(match.group(1))
+                continue
+            # حذف سطر سعر القطعة
+            if re.search(r'سعر\s*القطعه|سعر\s*القطعة', line, re.IGNORECASE):
+                continue
+            description_lines.append(line)
+        
         if price_offer is not None:
             description = "\n".join(description_lines).strip()
             retail_price = RETAIL_MAPPING.get(price_offer, price_offer)
@@ -895,7 +920,7 @@ def organizer_processor(text, msg_date, current_num, source_id):
     return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 # ============================================================
-# معالج قناة N (hebaNor) – الإصدار 3.9.21
+# معالج قناة N (hebaNor) – الإصدار 3.9.22
 # ============================================================
 def hebanor_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -1225,13 +1250,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.21 (Aysel: 12 independent handlers with original labels) Ready!"
+    return "Retail Pro Bot v3.9.22 (Aysel: added generic handler for price + special offer) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.21 يبدأ... (معالجات Aysel الجديدة مع التسميات الأصلية)")
+    print("🚀 Retail Pro Bot v3.9.22 يبدأ... (معالج عام لـ 'سعر القطعة + عرض خاص' في Aysel)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
