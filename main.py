@@ -452,28 +452,81 @@ def apply_general_fixes(text):
     text = re.sub(r'\bسعو\b', 'سعر', text, flags=re.IGNORECASE)
     return text
 
+# ============================================================
+# معالج قناة sasaaccessories – الإصدار 3.9.22 (يدعم منتجات متعددة)
+# ============================================================
 def sasa_processor(text, msg_date, current_num, source_id):
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
 
+    text = apply_general_fixes(text)
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     if len(lines) < 3:
         return default_processor(text, msg_date, current_num, source_id)
 
-    text = apply_general_fixes(text)
+    # =============================================
+    # معالج الحالة: وجود عدة منتجات مع أسعار لكل منها
+    # =============================================
+    # نبحث عن وجود كلمات "جمله" و "اونلاين" وأسماء منتجات مثل "سلسله" و "انسيال"
+    # نفحص عدد الأسطر التي تحتوي على "جمله" أو "اونلاين"
+    price_lines = [line for line in lines if re.search(r'جمله|اونلاين', line, re.IGNORECASE)]
+    # إذا كان عدد أسطر الأسعار أكبر من 2، فهذا يعني أن هناك عدة منتجات
+    if len(price_lines) >= 4:
+        # نستخرج أسماء المنتجات والأسعار
+        products = []
+        current_product = None
+        # نمر على الأسطر لاستخراج المنتجات والأسعار
+        for line in lines:
+            # إذا كان السطر لا يحتوي على "جمله" أو "اونلاين" وليس فارغاً، قد يكون اسم منتج
+            if not re.search(r'جمله|اونلاين', line, re.IGNORECASE) and line.strip():
+                # إذا كان السطر ليس رقماً أو رمزاً، نعتبره اسم منتج
+                if not re.match(r'^[\d\s]+$', line) and not re.match(r'^[A-Z]+\s*\d+$', line):
+                    current_product = line.strip()
+            # إذا كان السطر يحتوي على "جمله" أو "اونلاين"، نستخرج السعر ونربطه بالمنتج الحالي
+            match_jomla = re.search(r'جمله\s*(\d+)', line, re.IGNORECASE)
+            match_online = re.search(r'اونلاين\s*(\d+)', line, re.IGNORECASE)
+            if (match_jomla or match_online) and current_product:
+                price = None
+                if match_online:
+                    price = int(match_online.group(1))
+                elif match_jomla:
+                    price = int(match_jomla.group(1))
+                if price is not None:
+                    products.append((current_product, price))
+                # بعد استخراج السعر، نعيد تعيين current_product لتجنب تكرار نفس المنتج
+                current_product = None
+        # إذا وجدنا منتجين على الأقل، نستخدم هذا المعالج
+        if len(products) >= 2:
+            # بناء الوصف: جميع الأسطر ما عدا الأسطر التي تحتوي على "جمله" أو "اونلاين"
+            description_lines = []
+            for line in lines:
+                if not re.search(r'جمله|اونلاين', line, re.IGNORECASE):
+                    description_lines.append(line)
+            description = "\n".join(description_lines).strip()
+            my_code = generate_code(source_id, msg_date, current_num)
+            result_lines = [description, f"الكود : 🔖 {my_code}"]
+            for name, price in products:
+                retail_price = RETAIL_MAPPING.get(price, price)
+                price_ar = convert_to_arabic_numbers(retail_price)
+                result_lines.append(f"{name} بسعر : 💰 {price_ar} ج 🔥")
+            return "\n".join(result_lines)
 
+    # =============================================
+    # المعالج القديم: حالة منتج واحد
+    # =============================================
     has_jomla = any(re.search(r'جمله\s*\d+', line, re.IGNORECASE) for line in lines)
-    has_online = any(re.search(r'اونل\S*', line, re.IGNORECASE) for line in lines)
+    has_online = any(re.search(r'اونلاين\s*\d+', line, re.IGNORECASE) for line in lines)
 
     if not has_jomla or not has_online:
         return default_processor(text, msg_date, current_num, source_id)
 
     online_price = None
     for line in lines:
-        if re.search(r'اونل\S*', line, re.IGNORECASE):
+        if re.search(r'اونلاين', line, re.IGNORECASE):
             match = re.search(r'(\d+)', line)
-            if match: online_price = int(match.group(1))
-            break
+            if match:
+                online_price = int(match.group(1))
+                break
 
     if online_price is None:
         jomla_price = None
@@ -491,7 +544,7 @@ def sasa_processor(text, msg_date, current_num, source_id):
     clean_lines = []
     for line in lines:
         if re.search(r'جمله\s*\d+', line, re.IGNORECASE): continue
-        if re.search(r'اونل\S*', line, re.IGNORECASE): continue
+        if re.search(r'اونلاين\s*\d+', line, re.IGNORECASE): continue
         clean_lines.append(line)
 
     description = "\n".join(clean_lines).strip()
@@ -505,7 +558,7 @@ def sasa_processor(text, msg_date, current_num, source_id):
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 # ============================================================
-# معالج قناة ayselstore55 – الإصدار 3.9.22
+# معالج قناة ayselstore55 – الإصدار 3.9.21
 # ============================================================
 def aysel_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -762,32 +815,6 @@ def aysel_processor(text, msg_date, current_num, source_id):
             result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
             return "\n".join(result_lines)
 
-    # معالج 13: أي نص يحتوي على سعر القطعة وعرض خاص (نمط عام)
-    # نكتشف وجود سعر القطعة وعرض خاص في أي نص
-    has_individual_price = any(re.search(r'سعر\s*القطعه|سعر\s*القطعة', line, re.IGNORECASE) for line in lines)
-    has_offer = any(re.search(r'عرض\s*خاص', line, re.IGNORECASE) for line in lines)
-    
-    if has_individual_price and has_offer:
-        price_offer = None
-        description_lines = []
-        for line in lines:
-            # البحث عن العرض الخاص
-            match = re.search(r'عرض\s*خاص\s*[:：]?\s*(\d+)', line, re.IGNORECASE)
-            if match:
-                price_offer = int(match.group(1))
-                continue
-            # حذف سطر سعر القطعة
-            if re.search(r'سعر\s*القطعه|سعر\s*القطعة', line, re.IGNORECASE):
-                continue
-            description_lines.append(line)
-        
-        if price_offer is not None:
-            description = "\n".join(description_lines).strip()
-            retail_price = RETAIL_MAPPING.get(price_offer, price_offer)
-            price_ar = convert_to_arabic_numbers(retail_price)
-            result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
-            return "\n".join(result_lines)
-
     # لو مفيش معالج طابق، نستخدم المعالج الافتراضي
     return default_processor(text, msg_date, current_num, source_id)
 
@@ -920,7 +947,7 @@ def organizer_processor(text, msg_date, current_num, source_id):
     return f"{description}\nالكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 # ============================================================
-# معالج قناة N (hebaNor) – الإصدار 3.9.22
+# معالج قناة N (hebaNor) – الإصدار 3.9.21
 # ============================================================
 def hebanor_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -1250,13 +1277,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.22 (Aysel: added generic handler for price + special offer) Ready!"
+    return "Retail Pro Bot v3.9.22 (Sasa: multi-product support) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.22 يبدأ... (معالج عام لـ 'سعر القطعة + عرض خاص' في Aysel)")
+    print("🚀 Retail Pro Bot v3.9.22 يبدأ... (دعم منتجات متعددة في قناة sasaaccessories)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
