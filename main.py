@@ -874,7 +874,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
     return default_processor(text, msg_date, current_num, source_id)
 
 # ============================================================
-# معالج قناة hebaNor (شنط) – الإصدار 3.9.27
+# معالج قناة hebaNor (شنط) – الإصدار 3.9.28
 # ============================================================
 def hebanor_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -985,9 +985,9 @@ def hebanor_processor(text, msg_date, current_num, source_id):
             return "\n".join(result_lines)
 
     # =============================================
-    # معالج 3: المعالج العام للشنط
+    # معالج 3: المعالج العام للشنط (معدل لحذف سطور الأسعار البسيطة)
     # =============================================
-    # استخراج السعر
+    # استخراج السعر من النص (أول رقم)
     price = None
     for line in lines:
         match = re.search(r'(\d+)', line)
@@ -1004,10 +1004,14 @@ def hebanor_processor(text, msg_date, current_num, source_id):
     new_price = round_up_to_nearest_5(price * get_multiplier(price))
     price_ar = convert_to_arabic_numbers(new_price)
     
-    # بناء الوصف (حذف أسطر السعر و Code)
+    # بناء الوصف: حذف أسطر السعر (price/سعر/Code/كود) وأي سطر يحتوي على رقم + "ج" أو "جنيه"
     description_lines = []
     for line in lines:
+        # حذف الأسطر التي تحتوي على price/سعر/Code/كود
         if re.search(r'price|سعر|Code|كود', line, re.IGNORECASE):
+            continue
+        # حذف الأسطر التي تحتوي على رقم متبوع بـ "ج" أو "جنيه" (مثل "600 ج")
+        if re.search(r'\d+\s*[جج]', line):
             continue
         description_lines.append(line)
     
@@ -1016,7 +1020,7 @@ def hebanor_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 # ============================================================
-# معالج قناة irona44 (شنط) – الإصدار 3.9.27
+# معالج قناة irona44 (شنط) – الإصدار 3.9.28
 # ============================================================
 def irona_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -1061,7 +1065,7 @@ def irona_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 # ============================================================
-# معالج قناة ronybags (شنط) – الإصدار 3.9.27
+# معالج قناة ronybags (شنط) – الإصدار 3.9.28
 # ============================================================
 def rony_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -1156,7 +1160,7 @@ def channel_k_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 # ============================================================
-# معالج قناة I (إكسسوارات)
+# معالج قناة I (إكسسوارات) – الإصدار 3.9.28 (معالج "بدل")
 # ============================================================
 def channel_i_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -1172,6 +1176,30 @@ def channel_i_processor(text, msg_date, current_num, source_id):
         line = re.sub(r'(?<![a-zA-Z])(?:infiniyu|infinity)(?![a-zA-Z])', 'فاشونيستا', line, flags=re.IGNORECASE)
         converted_lines.append(line)
 
+    # =============================================
+    # معالج جديد: النمط "ب [رقم] بدل [رقم] ج"
+    # =============================================
+    for idx, line in enumerate(converted_lines):
+        match = re.search(r'(.*?)\s*ب\s*(\d+)\s*بدل\s*(\d+)\s*ج', line, re.IGNORECASE)
+        if match:
+            product_name = match.group(1).strip()
+            price1 = int(match.group(2))
+            price2 = int(match.group(3))
+            # استخدام السعر الثاني (الأعلى)
+            price_to_use = price2
+            retail_price = RETAIL_MAPPING.get(price_to_use, price_to_use)
+            price_ar = convert_to_arabic_numbers(retail_price)
+            my_code = generate_code(source_id, msg_date, current_num)
+            # استبدال السطر بالوصف فقط
+            converted_lines[idx] = product_name
+            # إضافة باقي الأسطر كما هي (عدا سطر السعر)
+            description = "\n".join(converted_lines).strip()
+            result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
+            return "\n".join(result_lines)
+
+    # =============================================
+    # المعالج القديم (بدون "بدل")
+    # =============================================
     price_pattern = re.compile(r'(.*?)\s*ب\s*(\d+)\s*(?:ج|جنيه)')
     products = []
     price_line_indices = []
@@ -1501,13 +1529,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.27 (Fixed syntax error) Ready!"
+    return "Retail Pro Bot v3.9.28 (I: 'ب ... بدل' handler, N: remove simple price lines) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.27 يبدأ... (إصلاح الخطأ الإملائي)")
+    print("🚀 Retail Pro Bot v3.9.28 يبدأ... (معالج 'بدل' في قناة I، وحذف أسعار ج في N)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
