@@ -874,7 +874,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
     return default_processor(text, msg_date, current_num, source_id)
 
 # ============================================================
-# معالج قناة hebaNor (شنط) – الإصدار 3.9.28
+# معالج قناة hebaNor (شنط) – الإصدار 3.9.29 (تحسين استخراج السعر)
 # ============================================================
 def hebanor_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -985,18 +985,38 @@ def hebanor_processor(text, msg_date, current_num, source_id):
             return "\n".join(result_lines)
 
     # =============================================
-    # معالج 3: المعالج العام للشنط (معدل لحذف سطور الأسعار البسيطة)
+    # معالج 3: المعالج العام للشنط (معدل لاستخراج السعر الصحيح)
     # =============================================
-    # استخراج السعر من النص (أول رقم)
+    # استخراج السعر: نفضل الأرقام التي تتبعها "ج" أو "جنيه"، ونتجنب أرقام المقاسات (تحتوي على × أو سم)
     price = None
+    candidate_prices = []
     for line in lines:
-        match = re.search(r'(\d+)', line)
-        if match:
-            val = int(match.group(1))
+        # نبحث عن أرقام في السطر
+        numbers = re.findall(r'(\d+)', line)
+        if not numbers:
+            continue
+        # إذا كان السطر يحتوي على "ج" أو "جنيه"، نعتبر الرقم الأول (أو الأخير) هو السعر
+        if re.search(r'[جج]', line):
+            # نأخذ الرقم الأخير في السطر (غالباً هو السعر)
+            price = int(numbers[-1])
+            break
+        # إذا كان السطر يحتوي على "×" أو "سم" أو "مقاس"، نتجاهل أرقامه (مقاسات)
+        if re.search(r'[×x]|سم|مقاس', line):
+            continue
+        # وإلا نضيف الأرقام كمرشحين
+        for num in numbers:
+            val = int(num)
             if 15 <= val <= 20000:
-                price = val
-                break
-    
+                candidate_prices.append(val)
+    # إذا لم نجد سعراً في سطر به "ج"، نأخذ أكبر رقم مرشح
+    if price is None and candidate_prices:
+        price = max(candidate_prices)
+    # إذا لم نجد أي شيء، نأخذ أول رقم في النص (كحل أخير)
+    if price is None:
+        all_nums = re.findall(r'(\d+)', text)
+        if all_nums:
+            price = int(all_nums[-1])  # نأخذ آخر رقم
+
     if price is None:
         return default_processor(text, msg_date, current_num, source_id)
     
@@ -1010,7 +1030,7 @@ def hebanor_processor(text, msg_date, current_num, source_id):
         # حذف الأسطر التي تحتوي على price/سعر/Code/كود
         if re.search(r'price|سعر|Code|كود', line, re.IGNORECASE):
             continue
-        # حذف الأسطر التي تحتوي على رقم متبوع بـ "ج" أو "جنيه" (مثل "600 ج")
+        # حذف الأسطر التي تحتوي على رقم متبوع بـ "ج" أو "جنيه" (مثل "1900 ج")
         if re.search(r'\d+\s*[جج]', line):
             continue
         description_lines.append(line)
@@ -1020,7 +1040,7 @@ def hebanor_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 # ============================================================
-# معالج قناة irona44 (شنط) – الإصدار 3.9.28
+# معالج قناة irona44 (شنط) – الإصدار 3.9.29
 # ============================================================
 def irona_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -1065,7 +1085,7 @@ def irona_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 # ============================================================
-# معالج قناة ronybags (شنط) – الإصدار 3.9.28
+# معالج قناة ronybags (شنط) – الإصدار 3.9.29
 # ============================================================
 def rony_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -1160,7 +1180,7 @@ def channel_k_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 # ============================================================
-# معالج قناة I (إكسسوارات) – الإصدار 3.9.28 (معالج "بدل")
+# معالج قناة I (إكسسوارات) – الإصدار 3.9.29 (معالج "بدل")
 # ============================================================
 def channel_i_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -1529,13 +1549,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.28 (I: 'ب ... بدل' handler, N: remove simple price lines) Ready!"
+    return "Retail Pro Bot v3.9.29 (N: fixed price extraction ignoring dimensions) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.28 يبدأ... (معالج 'بدل' في قناة I، وحذف أسعار ج في N)")
+    print("🚀 Retail Pro Bot v3.9.29 يبدأ... (تحسين استخراج السعر في قناة N)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
