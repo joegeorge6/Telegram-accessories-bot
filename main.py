@@ -708,7 +708,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
             for label, price in zip(labels, prices):
                 retail = RETAIL_MAPPING.get(price, price)
                 price_ar = convert_to_arabic_numbers(retail)
-                result_lines.append(f"{label} بسعر : 💰 {price_ar} ج 🔥")
+                result_lines.append(f"{label} بسعر : 💰 {price_ar} ج 🔥"]
             return "\n".join(result_lines)
 
     # معالج 8: سلسله حروف (سعر القطعه 75 + عرض خاص 65)
@@ -832,7 +832,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
             for name, price in products:
                 retail = RETAIL_MAPPING.get(price, price)
                 price_ar = convert_to_arabic_numbers(retail)
-                result_lines.append(f"{name} بسعر : 💰 {price_ar} ج 🔥")
+                result_lines.append(f"{name} بسعر : 💰 {price_ar} ج 🔥"]
             return "\n".join(result_lines)
 
     # معالج 14: سلسله قلب ستالس (سعر القطعه 75 + عرض خاص 50 + N-017)
@@ -874,7 +874,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
     return default_processor(text, msg_date, current_num, source_id)
 
 # ============================================================
-# معالج قناة hebaNor (شنط) – الإصدار 3.9.25
+# معالج قناة hebaNor (شنط) – الإصدار 3.9.26
 # ============================================================
 def hebanor_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -1016,11 +1016,14 @@ def hebanor_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 # ============================================================
-# معالج قناة irona44 (شنط) – الإصدار 3.9.25
+# معالج قناة irona44 (شنط) – الإصدار 3.9.26
 # ============================================================
 def irona_processor(text, msg_date, current_num, source_id):
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
+
+    # تصحيح إملائي خاص بقناة IN فقط
+    text = re.sub(r'\bqulity\b', 'quality', text, flags=re.IGNORECASE)
 
     text = apply_general_fixes(text)
     lines = [line.strip() for line in text.split('\n') if line.strip()]
@@ -1058,7 +1061,7 @@ def irona_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 # ============================================================
-# معالج قناة ronybags (شنط) – الإصدار 3.9.25
+# معالج قناة ronybags (شنط) – الإصدار 3.9.26
 # ============================================================
 def rony_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -1498,13 +1501,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.25 (Bags channels: IN, R, K, N with correct pricing; Accessories: Aysel, Sasa, I) Ready!"
+    return "Retail Pro Bot v3.9.26 (IN: fixed 'qulity' → 'quality') Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.25 يبدأ... (قنوات الشنط: IN, R, K, N - قنوات الإكسسوارات: Aysel, Sasa, I)")
+    print("🚀 Retail Pro Bot v3.9.26 يبدأ... (تصحيح إملائي في قناة IN)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
