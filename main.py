@@ -1255,7 +1255,7 @@ def irona_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 # ============================================================
-# معالج قناة ronybags (شنط) – الإصدار 3.9.29
+# معالج قناة ronybags (شنط) – الإصدار 3.9.31 (معدل)
 # ============================================================
 def rony_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -1268,15 +1268,40 @@ def rony_processor(text, msg_date, current_num, source_id):
 
     my_code = generate_code(source_id, msg_date, current_num)
 
-    # استخراج السعر
+    # =============================================
+    # استخراج السعر: إعطاء الأولوية للأسطر التي تحتوي على "سعر" أو "price"
+    # وتجاهل الأسطر التي تحتوي على "Code" أو "كود"
+    # =============================================
     price = None
+    # أولاً: البحث في الأسطر التي تحتوي على "سعر" أو "price"
     for line in lines:
-        match = re.search(r'(\d+)', line)
-        if match:
-            val = int(match.group(1))
-            if 15 <= val <= 20000:
-                price = val
+        if re.search(r'سعر|price', line, re.IGNORECASE):
+            numbers = re.findall(r'(\d+)', line)
+            if numbers:
+                # نأخذ الرقم الأخير في السطر (غالباً هو السعر)
+                price = int(numbers[-1])
                 break
+    
+    # ثانياً: إذا لم نجد، نأخذ أي رقم (مع تجاهل أسطر Code)
+    if price is None:
+        for line in lines:
+            if re.search(r'Code|كود', line, re.IGNORECASE):
+                continue
+            numbers = re.findall(r'(\d+)', line)
+            if numbers:
+                for num in reversed(numbers):
+                    val = int(num)
+                    if 15 <= val <= 20000:
+                        price = val
+                        break
+                if price is not None:
+                    break
+
+    # ثالثاً: كحل أخير، نأخذ أي رقم في النص
+    if price is None:
+        all_nums = re.findall(r'(\d+)', text)
+        if all_nums:
+            price = int(all_nums[-1])
 
     if price is None:
         return default_processor(text, msg_date, current_num, source_id)
@@ -1719,13 +1744,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.30 (Aysel: fixed special offer priority, added 18 handlers) Ready!"
+    return "Retail Pro Bot v3.9.31 (Rony: priority to 'سعر' over 'Code') Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.30 يبدأ... (إصلاح أولوية العرض الخاص في Aysel، إضافة معالجات جديدة)")
+    print("🚀 Retail Pro Bot v3.9.31 يبدأ... (أولوية 'سعر' على 'Code' في قناة ronybags)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
