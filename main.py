@@ -545,7 +545,7 @@ def sasa_processor(text, msg_date, current_num, source_id):
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 # ============================================================
-# معالج قناة ayselstore55 – الإصدار 3.9.30
+# معالج قناة ayselstore55 – الإصدار 3.9.32 (حذف جميع الأكواد)
 # ============================================================
 def aysel_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -586,6 +586,16 @@ def aysel_processor(text, msg_date, current_num, source_id):
     filtered_lines = []
     for line in lines:
         if re.search(r'(سعر\s*القطعتين\s*مع\s*بعض|القطعتين\s*مع\s*بعض)', line, re.IGNORECASE):
+            continue
+        filtered_lines.append(line)
+    lines = filtered_lines
+
+    # =============================================
+    # قاعدة عامة 4: حذف أي سطر يحتوي على كود (حرف كبير + شرطة + أرقام) مثل B-008, N-015, A-123
+    # =============================================
+    filtered_lines = []
+    for line in lines:
+        if re.search(r'\b[A-Z]-\d+\b', line):
             continue
         filtered_lines.append(line)
     lines = filtered_lines
@@ -1255,7 +1265,7 @@ def irona_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 # ============================================================
-# معالج قناة ronybags (شنط) – الإصدار 3.9.31 (معدل)
+# معالج قناة ronybags (شنط) – الإصدار 3.9.31
 # ============================================================
 def rony_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -1744,13 +1754,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.31 (Rony: priority to 'سعر' over 'Code') Ready!"
+    return "Retail Pro Bot v3.9.32 (Aysel: remove all code lines like B-008, N-015, etc.) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.31 يبدأ... (أولوية 'سعر' على 'Code' في قناة ronybags)")
+    print("🚀 Retail Pro Bot v3.9.32 يبدأ... (حذف جميع الأكواد في قناة Aysel)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
