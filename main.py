@@ -455,7 +455,7 @@ def apply_general_fixes(text):
     return text
 
 # ============================================================
-# معالج قناة sasaaccessories (إكسسوارات)
+# معالج قناة sasaaccessories – الإصدار 3.9.33
 # ============================================================
 def sasa_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -466,7 +466,49 @@ def sasa_processor(text, msg_date, current_num, source_id):
     if len(lines) < 3:
         return default_processor(text, msg_date, current_num, source_id)
 
-    # معالج الحالة: وجود عدة منتجات مع أسعار لكل منها
+    # =============================================
+    # معالج جديد: المنتجات المرقمة (1-، 2-، ...)
+    # =============================================
+    # نبحث عن وجود أرقام متسلسلة مثل "1-", "2-" إلخ
+    numbered_items = []
+    for line in lines:
+        match = re.search(r'^(\d+)-', line.strip())
+        if match:
+            numbered_items.append(match.group(1))
+    # إذا وجدنا 3 أو أكثر من المنتجات المرقمة، نتعامل معها كحالة خاصة
+    if len(numbered_items) >= 3:
+        # استخراج اسم المنتج (عادةً السطر الأول)
+        product_name = lines[0] if lines else ""
+        # قائمة لتخزين (الرقم, السعر)
+        items = []
+        # نمر على الأسطر ونستخرج الأسعار
+        for line in lines:
+            match_num = re.search(r'^(\d+)-', line.strip())
+            if match_num:
+                num = match_num.group(1)
+                # نبحث عن "جمله" و "اونلاين" في نفس السطر
+                match_jomla = re.search(r'جمله\s*(\d+)', line, re.IGNORECASE)
+                match_online = re.search(r'اونلاين\s*(\d+)', line, re.IGNORECASE)
+                price = None
+                if match_online:
+                    price = int(match_online.group(1))
+                elif match_jomla:
+                    price = int(match_jomla.group(1))
+                if price is not None:
+                    retail_price = RETAIL_MAPPING.get(price, price)
+                    items.append((num, retail_price))
+        if items:
+            my_code = generate_code(source_id, msg_date, current_num)
+            result_lines = [product_name]  # نضيف اسم المنتج أولاً
+            for num, price in items:
+                price_ar = convert_to_arabic_numbers(price)
+                result_lines.append(f"{num}-السعر : 💰 {price_ar} ج 🔥")
+            result_lines.append(f"الكود : 🔖 {my_code}")
+            return "\n".join(result_lines)
+
+    # =============================================
+    # المعالج القديم: عدة منتجات بدون ترقيم (4 أسعار فأكثر)
+    # =============================================
     price_lines = [line for line in lines if re.search(r'جمله|اونلاين', line, re.IGNORECASE)]
     if len(price_lines) >= 4:
         products = []
@@ -500,7 +542,9 @@ def sasa_processor(text, msg_date, current_num, source_id):
                 result_lines.append(f"{name} بسعر : 💰 {price_ar} ج 🔥")
             return "\n".join(result_lines)
 
+    # =============================================
     # المعالج القديم: حالة منتج واحد
+    # =============================================
     has_jomla = any(re.search(r'جمله\s*\d+', line, re.IGNORECASE) for line in lines)
     has_online = any(re.search(r'اونلاين\s*\d+', line, re.IGNORECASE) for line in lines)
 
@@ -545,7 +589,7 @@ def sasa_processor(text, msg_date, current_num, source_id):
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 # ============================================================
-# معالج قناة ayselstore55 – الإصدار 3.9.32 (حذف جميع الأكواد)
+# معالج قناة ayselstore55 – الإصدار 3.9.32
 # ============================================================
 def aysel_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -1265,11 +1309,14 @@ def irona_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 # ============================================================
-# معالج قناة ronybags (شنط) – الإصدار 3.9.31
+# معالج قناة ronybags (شنط) – الإصدار 3.9.34 (تصحيح إملائي)
 # ============================================================
 def rony_processor(text, msg_date, current_num, source_id):
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
+
+    # تصحيح إملائي خاص بقناة R فقط
+    text = re.sub(r'ارويجينال', 'اوريجينال', text, flags=re.IGNORECASE)
 
     text = apply_general_fixes(text)
     lines = [line.strip() for line in text.split('\n') if line.strip()]
@@ -1754,13 +1801,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.32 (Aysel: remove all code lines like B-008, N-015, etc.) Ready!"
+    return "Retail Pro Bot v3.9.34 (Rony: fix 'ارويجينال' → 'اوريجينال') Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.32 يبدأ... (حذف جميع الأكواد في قناة Aysel)")
+    print("🚀 Retail Pro Bot v3.9.34 يبدأ... (تصحيح إملائي في قناة ronybags)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
