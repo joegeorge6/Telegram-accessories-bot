@@ -456,7 +456,7 @@ def apply_general_fixes(text):
     return text
 
 # ============================================================
-# معالج قناة PEARLEstores123 (إكسسوارات) – الإصدار 3.9.35
+# معالج قناة PEARLEstores123 – الإصدار 3.9.36
 # ============================================================
 def pearle_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -472,10 +472,8 @@ def pearle_processor(text, msg_date, current_num, source_id):
     # استخراج السعر من النص (أي رقم في النطاق 15-2000)
     price = None
     for line in lines:
-        # نبحث عن أي رقم في السطر
         numbers = re.findall(r'(\d+)', line)
         if numbers:
-            # نأخذ الرقم الأخير في السطر (غالباً هو السعر)
             val = int(numbers[-1])
             if 15 <= val <= 2000:
                 price = val
@@ -488,16 +486,22 @@ def pearle_processor(text, msg_date, current_num, source_id):
     retail_price = RETAIL_MAPPING.get(price, price)
     price_ar = convert_to_arabic_numbers(retail_price)
 
-    # بناء الوصف: نحذف أي سطر يحتوي على رقم (لأن السعر سيُضاف في النهاية)
+    # بناء الوصف: نحذف أي سطر يحتوي على أرقام فقط أو أرقام مع كلمات مثل "السعر" أو "جمله" أو "Price"
     description_lines = []
     for line in lines:
-        # نحذف الأسطر التي تحتوي على أرقام فقط أو أرقام مع كلمات مثل "السعر" أو "جمله"
-        if re.search(r'\d+', line) and (re.search(r'سعر|جمله', line, re.IGNORECASE) or re.match(r'^[\d\s]+$', line.strip())):
+        # نحذف الأسطر التي تحتوي على أرقام مع كلمات السعر
+        if re.search(r'\d+', line) and (re.search(r'سعر|Price|جمله', line, re.IGNORECASE) or re.match(r'^[\d\s]+$', line.strip())):
             continue
         description_lines.append(line)
 
     description = "\n".join(description_lines).strip()
-    result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
+    
+    # إذا لم يتبقَ وصف، نبدأ بالكود مباشرة
+    if description:
+        result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
+    else:
+        result_lines = [f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
+    
     return "\n".join(result_lines)
 
 # ============================================================
@@ -1848,13 +1852,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.35 (Added PEARLEstores123 with E prefix) Ready!"
+    return "Retail Pro Bot v3.9.36 (PEARLE: show only code and price when no description) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.35 يبدأ... (إضافة قناة PEARLEstores123 ببادئة E)")
+    print("🚀 Retail Pro Bot v3.9.36 يبدأ... (تحسين معالج PEARLEstores123)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
