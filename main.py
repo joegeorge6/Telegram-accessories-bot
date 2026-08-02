@@ -128,7 +128,8 @@ SUPPLIER_PREFIX_MAP = {
     "hebaNor": "N",
     -1001230500963: "K",
     "irona44": "IN",
-    "ronybags": "R"
+    "ronybags": "R",
+    "PEARLEstores123": "E"
 }
 
 def _sync_init_db():
@@ -453,6 +454,51 @@ def apply_general_fixes(text):
     text = re.sub(r'(?:الانسياب|انسياب)', 'الانسيال', text, flags=re.IGNORECASE)
     text = re.sub(r'\bسعو\b', 'سعر', text, flags=re.IGNORECASE)
     return text
+
+# ============================================================
+# معالج قناة PEARLEstores123 (إكسسوارات) – الإصدار 3.9.35
+# ============================================================
+def pearle_processor(text, msg_date, current_num, source_id):
+    if not text: return ""
+    if re.search(r'https?://', text, re.IGNORECASE): return None
+
+    text = apply_general_fixes(text)
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    if not lines:
+        return default_processor(text, msg_date, current_num, source_id)
+
+    my_code = generate_code(source_id, msg_date, current_num)
+
+    # استخراج السعر من النص (أي رقم في النطاق 15-2000)
+    price = None
+    for line in lines:
+        # نبحث عن أي رقم في السطر
+        numbers = re.findall(r'(\d+)', line)
+        if numbers:
+            # نأخذ الرقم الأخير في السطر (غالباً هو السعر)
+            val = int(numbers[-1])
+            if 15 <= val <= 2000:
+                price = val
+                break
+
+    if price is None:
+        return default_processor(text, msg_date, current_num, source_id)
+
+    # تحويل السعر باستخدام RETAIL_MAPPING
+    retail_price = RETAIL_MAPPING.get(price, price)
+    price_ar = convert_to_arabic_numbers(retail_price)
+
+    # بناء الوصف: نحذف أي سطر يحتوي على رقم (لأن السعر سيُضاف في النهاية)
+    description_lines = []
+    for line in lines:
+        # نحذف الأسطر التي تحتوي على أرقام فقط أو أرقام مع كلمات مثل "السعر" أو "جمله"
+        if re.search(r'\d+', line) and (re.search(r'سعر|جمله', line, re.IGNORECASE) or re.match(r'^[\d\s]+$', line.strip())):
+            continue
+        description_lines.append(line)
+
+    description = "\n".join(description_lines).strip()
+    result_lines = [description, f"الكود : 🔖 {my_code}", f"السعر : 💰 {price_ar} ج 🔥"]
+    return "\n".join(result_lines)
 
 # ============================================================
 # معالج قناة sasaaccessories – الإصدار 3.9.33
@@ -1309,7 +1355,7 @@ def irona_processor(text, msg_date, current_num, source_id):
     return "\n".join(result_lines)
 
 # ============================================================
-# معالج قناة ronybags (شنط) – الإصدار 3.9.34 (تصحيح إملائي)
+# معالج قناة ronybags (شنط) – الإصدار 3.9.34
 # ============================================================
 def rony_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -1661,6 +1707,7 @@ PROCESSOR_MAP = {
     -1001230500963: channel_k_processor,
     "irona44": irona_processor,
     "ronybags": rony_processor,
+    "PEARLEstores123": pearle_processor,
 }
 
 def get_processor(source_id):
@@ -1801,13 +1848,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.34 (Rony: fix 'ارويجينال' → 'اوريجينال') Ready!"
+    return "Retail Pro Bot v3.9.35 (Added PEARLEstores123 with E prefix) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.34 يبدأ... (تصحيح إملائي في قناة ronybags)")
+    print("🚀 Retail Pro Bot v3.9.35 يبدأ... (إضافة قناة PEARLEstores123 ببادئة E)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
