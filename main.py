@@ -639,7 +639,7 @@ def sasa_processor(text, msg_date, current_num, source_id):
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 # ============================================================
-# معالج قناة ayselstore55 – الإصدار 3.9.32
+# معالج قناة ayselstore55 – الإصدار 3.9.37
 # ============================================================
 def aysel_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -695,6 +695,41 @@ def aysel_processor(text, msg_date, current_num, source_id):
     lines = filtered_lines
 
     my_code = generate_code(source_id, msg_date, current_num)
+
+    # =============================================
+    # معالج جديد: الأسطر المرقمة (1 : 100, 2 : 85, ...)
+    # =============================================
+    # نتحقق من وجود سطر يبدأ برقم ثم ":" أو "-"
+    numbered_lines = []
+    for line in lines:
+        if re.match(r'^\d+\s*[:：\-]\s*\S+', line):
+            numbered_lines.append(line)
+    
+    if len(numbered_lines) >= 2:
+        # نتعامل معها كحالة خاصة
+        result_lines = []
+        for line in lines:
+            # نبحث عن سطر مرقم
+            match = re.match(r'^(\d+)\s*[:：\-]\s*(\S+)$', line)
+            if match:
+                num = match.group(1)
+                value = match.group(2)
+                # إذا كانت القيمة رقماً، نحولها باستخدام RETAIL_MAPPING
+                if value.isdigit():
+                    price = int(value)
+                    retail_price = RETAIL_MAPPING.get(price, price)
+                    price_ar = convert_to_arabic_numbers(retail_price)
+                    result_lines.append(f"{num} : {price_ar}")
+                else:
+                    # إذا كانت غير رقمية (مثل ❌)، نحتفظ بها كما هي
+                    result_lines.append(line)
+            else:
+                # الأسطر غير المرقمة (مثل الكود أو أي شيء آخر) نضيفها كما هي
+                result_lines.append(line)
+        # نضيف الكود في النهاية (مع إزالة أي سطر كود قديم)
+        final_lines = [line for line in result_lines if not re.search(r'^كود\s*:', line, re.IGNORECASE)]
+        final_lines.append(f"الكود : 🔖 {my_code}")
+        return "\n".join(final_lines)
 
     # =============================================
     # معالج 1: بروشات البحر (الكيس فيه 4 قطع ب 25 جنيه)
@@ -1852,13 +1887,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.36 (PEARLE: show only code and price when no description) Ready!"
+    return "Retail Pro Bot v3.9.37 (Aysel: added numbered lines handler) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.36 يبدأ... (تحسين معالج PEARLEstores123)")
+    print("🚀 Retail Pro Bot v3.9.37 يبدأ... (إضافة معالج الأسطر المرقمة في Aysel)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
