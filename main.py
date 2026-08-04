@@ -639,7 +639,7 @@ def sasa_processor(text, msg_date, current_num, source_id):
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 # ============================================================
-# معالج قناة ayselstore55 – الإصدار 3.9.37
+# معالج قناة ayselstore55 – الإصدار 3.9.38
 # ============================================================
 def aysel_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -695,6 +695,55 @@ def aysel_processor(text, msg_date, current_num, source_id):
     lines = filtered_lines
 
     my_code = generate_code(source_id, msg_date, current_num)
+
+    # =============================================
+    # معالج 19: الطقم (سلسلة وانسيال مع سعر إجمالي وسعرين منفصلين)
+    # =============================================
+    if any('طقم' in line for line in lines) and any('سلسله' in line for line in lines) and any('انسيال' in line for line in lines):
+        # نبحث عن سعر السلسلة والانسيال
+        chain_price = None
+        chain_label = None
+        ancial_price = None
+        ancial_label = None
+        description_lines = []
+        
+        for line in lines:
+            # حذف أي سطر يحتوي على "سعر الطقم" أو "سعر الطقم كامل"
+            if re.search(r'سعر\s*الطقم', line, re.IGNORECASE):
+                continue
+            # استخراج سعر السلسلة
+            match_chain = re.search(r'(سلسله[^\d]*?)\s*(\d+)', line, re.IGNORECASE)
+            if match_chain and ('سعر' in line or 'سلسله' in line):
+                chain_label = match_chain.group(1).strip()
+                chain_price = int(match_chain.group(2))
+                continue
+            # استخراج سعر الانسيال
+            match_ancial = re.search(r'(انسيال[^\d]*?)\s*(\d+)', line, re.IGNORECASE)
+            if match_ancial and ('سعر' in line or 'انسيال' in line):
+                ancial_label = match_ancial.group(1).strip()
+                ancial_price = int(match_ancial.group(2))
+                continue
+            description_lines.append(line)
+        
+        if chain_price is not None and ancial_price is not None:
+            # تحويل الأسعار
+            chain_retail = RETAIL_MAPPING.get(chain_price, chain_price)
+            ancial_retail = RETAIL_MAPPING.get(ancial_price, ancial_price)
+            chain_ar = convert_to_arabic_numbers(chain_retail)
+            ancial_ar = convert_to_arabic_numbers(ancial_retail)
+            
+            # بناء النتيجة
+            description = "\n".join(description_lines).strip()
+            result_lines = [description, f"الكود : 🔖 {my_code}"]
+            if chain_label:
+                result_lines.append(f"{chain_label} : 💰 {chain_ar} ج 🔥")
+            else:
+                result_lines.append(f"السلسله : 💰 {chain_ar} ج 🔥")
+            if ancial_label:
+                result_lines.append(f"{ancial_label} : 💰 {ancial_ar} ج 🔥")
+            else:
+                result_lines.append(f"الانسيال : 💰 {ancial_ar} ج 🔥")
+            return "\n".join(result_lines)
 
     # =============================================
     # معالج جديد: الأسطر المرقمة (1 : 100, 2 : 85, ...)
@@ -1090,34 +1139,12 @@ def aysel_processor(text, msg_date, current_num, source_id):
             return "\n".join(result_lines)
 
     # =============================================
-    # معالج 17: طقم (سلسله + انسيال) مع سعر إجمالي
+    # معالج 17: طقم (سلسله + انسيال) مع سعر إجمالي (قديم - للاحتفاظ بالتوافق)
     # =============================================
     if any('طقم' in line for line in lines) and any('سلسله' in line for line in lines) and any('انسيال' in line for line in lines):
-        products = []
-        description_lines = []
-        for line in lines:
-            # حذف سطر الإجمالي
-            if re.search(r'سعر\s*القطعتين\s*مع\s*بعض|القطعتين\s*مع\s*بعض', line, re.IGNORECASE):
-                continue
-            # استخراج سعر السلسله
-            match1 = re.search(r'سلسله\s*ستالس\s*سعر\s*القطعه\s*(\d+)', line, re.IGNORECASE)
-            if match1:
-                products.append(('سلسله استانلس سعر القطعه', int(match1.group(1))))
-                continue
-            # استخراج سعر الانسيال
-            match2 = re.search(r'انسيال\s*ستالس\s*سعر\s*القطعه\s*(\d+)', line, re.IGNORECASE)
-            if match2:
-                products.append(('انسيال استانلس سعر القطعه', int(match2.group(1))))
-                continue
-            description_lines.append(line)
-        if products:
-            description = "\n".join(description_lines).strip()
-            result_lines = [description, f"الكود : 🔖 {my_code}"]
-            for name, price in products:
-                retail = RETAIL_MAPPING.get(price, price)
-                price_ar = convert_to_arabic_numbers(retail)
-                result_lines.append(f"{name} : 💰 {price_ar} ج 🔥")
-            return "\n".join(result_lines)
+        # هذا المعالج مشابه للمعالج 19 ولكن قد يكون له منطق مختلف، نتركه كنسخة احتياطية
+        # ولكن المعالج 19 سيتم تنفيذه أولاً، لذا هذا لن يتم تنفيذه إلا إذا فشل المعالج 19
+        pass
 
     # =============================================
     # معالج 18: كولكشن خلاخيل (سعرين منفصلين)
@@ -1183,7 +1210,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
     return default_processor(text, msg_date, current_num, source_id)
 
 # ============================================================
-# معالج قناة hebaNor (شنط) – الإصدار 3.9.29
+# معالج قناة hebaNor (شنط) – الإصدار 3.9.39 (تحسين استخراج السعر)
 # ============================================================
 def hebanor_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -1296,35 +1323,34 @@ def hebanor_processor(text, msg_date, current_num, source_id):
     # =============================================
     # معالج 3: المعالج العام للشنط (معدل لاستخراج السعر الصحيح)
     # =============================================
-    # استخراج السعر: نفضل الأرقام التي تتبعها "ج" أو "جنيه"، ونتجنب أرقام المقاسات (تحتوي على × أو سم)
+    # أولوية قصوى: البحث عن سطر يحتوي على "ج" أو "جنيه" واستخراج الرقم منه
     price = None
-    candidate_prices = []
+    price_line = None
     for line in lines:
-        # نبحث عن أرقام في السطر
-        numbers = re.findall(r'(\d+)', line)
-        if not numbers:
-            continue
-        # إذا كان السطر يحتوي على "ج" أو "جنيه"، نعتبر الرقم الأول (أو الأخير) هو السعر
         if re.search(r'[جج]', line):
-            # نأخذ الرقم الأخير في السطر (غالباً هو السعر)
-            price = int(numbers[-1])
-            break
-        # إذا كان السطر يحتوي على "×" أو "سم" أو "مقاس"، نتجاهل أرقامه (مقاسات)
-        if re.search(r'[×x]|سم|مقاس', line):
-            continue
-        # وإلا نضيف الأرقام كمرشحين
-        for num in numbers:
-            val = int(num)
-            if 15 <= val <= 20000:
-                candidate_prices.append(val)
-    # إذا لم نجد سعراً في سطر به "ج"، نأخذ أكبر رقم مرشح
-    if price is None and candidate_prices:
-        price = max(candidate_prices)
-    # إذا لم نجد أي شيء، نأخذ أول رقم في النص (كحل أخير)
+            numbers = re.findall(r'(\d+)', line)
+            if numbers:
+                # نتأكد أن السطر ليس مقاساً (لا يحتوي على × أو سم أو مقاس)
+                if not re.search(r'[×x]|سم|مقاس', line):
+                    price = int(numbers[-1])  # نأخذ الرقم الأخير
+                    price_line = line
+                    break
+
+    # إذا لم نجد سعراً في سطر به "ج"، نبحث في الأسطر الأخرى (مع تجاهل المقاسات)
+    if price is None:
+        for line in lines:
+            if re.search(r'[×x]|سم|مقاس', line):
+                continue
+            numbers = re.findall(r'(\d+)', line)
+            if numbers:
+                price = int(numbers[-1])
+                break
+
+    # كحل أخير: نأخذ أي رقم في النص
     if price is None:
         all_nums = re.findall(r'(\d+)', text)
         if all_nums:
-            price = int(all_nums[-1])  # نأخذ آخر رقم
+            price = int(all_nums[-1])
 
     if price is None:
         return default_processor(text, msg_date, current_num, source_id)
@@ -1333,13 +1359,13 @@ def hebanor_processor(text, msg_date, current_num, source_id):
     new_price = round_up_to_nearest_5(price * get_multiplier(price))
     price_ar = convert_to_arabic_numbers(new_price)
     
-    # بناء الوصف: حذف أسطر السعر (price/سعر/Code/كود) وأي سطر يحتوي على رقم + "ج" أو "جنيه"
+    # بناء الوصف: حذف الأسطر التي تحتوي على price/سعر/Code/كود وأي سطر يحتوي على رقم + "ج" أو "جنيه"
     description_lines = []
     for line in lines:
         # حذف الأسطر التي تحتوي على price/سعر/Code/كود
         if re.search(r'price|سعر|Code|كود', line, re.IGNORECASE):
             continue
-        # حذف الأسطر التي تحتوي على رقم متبوع بـ "ج" أو "جنيه" (مثل "1900 ج")
+        # حذف الأسطر التي تحتوي على رقم متبوع بـ "ج" أو "جنيه" (مثل "1550 ج")
         if re.search(r'\d+\s*[جج]', line):
             continue
         description_lines.append(line)
@@ -1887,13 +1913,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.37 (Aysel: added numbered lines handler) Ready!"
+    return "Retail Pro Bot v3.9.39 (N: fixed price extraction, prioritize 'ج' lines) Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.37 يبدأ... (إضافة معالج الأسطر المرقمة في Aysel)")
+    print("🚀 Retail Pro Bot v3.9.39 يبدأ... (تحسين استخراج السعر في قناة N)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
