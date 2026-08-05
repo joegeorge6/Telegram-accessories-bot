@@ -639,12 +639,15 @@ def sasa_processor(text, msg_date, current_num, source_id):
         return f"الكود : 🔖 {my_code}\nالسعر : 💰 {price_ar} ج 🔥"
 
 # ============================================================
-# معالج قناة ayselstore55 – الإصدار 3.9.38
+# معالج قناة ayselstore55 – الإصدار 3.9.40
 # ============================================================
 def aysel_processor(text, msg_date, current_num, source_id):
     if not text: return ""
     if re.search(r'https?://', text, re.IGNORECASE): return None
     
+    # تصحيح كلمة "برسنج" إلى "بيرسينج" في أي نص من قناة aysel
+    text = re.sub(r'برسنج', 'بيرسينج', text)
+
     norm_text = normalize_numbers(text)
     if any(word in norm_text for word in BLOCK_KEYWORDS):
         return None
@@ -825,7 +828,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
                 return "\n".join(result_lines)
 
     # =============================================
-    # معالج 3: برسنج بول باك (سعر الفرده الواحده ب 40 جنيه)
+    # معالج 3: برسنج بول باك (سعر الفرده الواحده ب 40 جنيه) - سيتم تصحيح "برسنج" تلقائياً
     # =============================================
     if any('برسنج' in line for line in lines) and any('سعر الفرده' in line for line in lines):
         price = None
@@ -1210,7 +1213,7 @@ def aysel_processor(text, msg_date, current_num, source_id):
     return default_processor(text, msg_date, current_num, source_id)
 
 # ============================================================
-# معالج قناة hebaNor (شنط) – الإصدار 3.9.39 (تحسين استخراج السعر)
+# معالج قناة hebaNor (شنط) – الإصدار 3.9.39
 # ============================================================
 def hebanor_processor(text, msg_date, current_num, source_id):
     if not text: return ""
@@ -1913,13 +1916,13 @@ async def main_handler(client, message):
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Retail Pro Bot v3.9.39 (N: fixed price extraction, prioritize 'ج' lines) Ready!"
+    return "Retail Pro Bot v3.9.40 (Aysel: replace 'برسنج' with 'بيرسينج') Ready!"
 
 async def start_bot():
     global channel_counters
     await init_db()
     channel_counters = load_counters()
-    print("🚀 Retail Pro Bot v3.9.39 يبدأ... (تحسين استخراج السعر في قناة N)")
+    print("🚀 Retail Pro Bot v3.9.40 يبدأ... (تصحيح 'برسنج' → 'بيرسينج' في Aysel)")
     await app.start()
     asyncio.create_task(fetch_history(app))
     await idle()
